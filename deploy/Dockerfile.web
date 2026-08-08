@@ -1,0 +1,61 @@
+# =============================================================================
+# InternalChat web — React build served as static files by nginx.
+#
+# Constitution v1.2.0, Build and Image Requirements: "a static web server image
+# for the React build output". No Node runtime reaches the final image — only
+# the compiled assets do.
+#
+# Build context is the repository root:
+#   docker build -f deploy/Dockerfile.web .
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1 — dependencies. `npm ci` from the committed lockfile, so the install
+# is reproducible rather than "whatever resolved today".
+# -----------------------------------------------------------------------------
+FROM node:22.22-alpine@sha256:f0a08e0402831ac4097e9825704bc2dfe6d2c1333de99686a89ca649159b02c8 AS deps
+WORKDIR /app
+
+COPY src/internalchat-web/package.json src/internalchat-web/package-lock.json ./
+RUN npm ci
+
+# -----------------------------------------------------------------------------
+# Stage 2 — typecheck, lint, and build. Frontend CI gate 8 runs here too, so a
+# type error or lint failure blocks the image, not just the pipeline.
+# -----------------------------------------------------------------------------
+FROM node:22.22-alpine@sha256:f0a08e0402831ac4097e9825704bc2dfe6d2c1333de99686a89ca649159b02c8 AS build
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY src/internalchat-web/ ./
+
+RUN npm run lint \
+    && npm run build
+
+# -----------------------------------------------------------------------------
+# Stage 3 — runtime. nginx serving static assets, nothing else.
+# -----------------------------------------------------------------------------
+FROM nginx:1.30.4-alpine@sha256:8a4f4b94275ff59d809477799cbbaf1a7ab65ed1871403d05e31fd66bdb8db82 AS final
+
+# The stock image runs the master process as root so it can bind :80 and write
+# /var/cache/nginx. We bind :8080 instead and hand the runtime paths to the
+# unprivileged `nginx` user (uid 101), so no stage runs as root.
+RUN rm -f /etc/nginx/conf.d/default.conf \
+    && mkdir -p /var/cache/nginx /var/run \
+    && chown -R nginx:nginx /var/cache/nginx /var/run /usr/share/nginx/html
+
+COPY --from=build --chown=nginx:nginx /app/dist /usr/share/nginx/html
+COPY --chown=nginx:nginx deploy/nginx/web.conf /etc/nginx/conf.d/web.conf
+
+# Master process must not try to become root-owned; it is already unprivileged.
+RUN sed -i '/^user /d' /etc/nginx/nginx.conf \
+    && sed -i 's#^pid .*#pid /var/run/nginx.pid;#' /etc/nginx/nginx.conf
+
+EXPOSE 8080
+
+USER 101:101
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=5 \
+    CMD wget --quiet --tries=1 --spider http://localhost:8080/healthz || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

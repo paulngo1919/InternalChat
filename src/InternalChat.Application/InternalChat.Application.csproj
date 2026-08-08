@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Constitution Principle I: Application depends on Domain only. It owns the interfaces for
+    every outbound concern; Infrastructure implements them and is never referenced from here.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\InternalChat.Domain\InternalChat.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Label="Abstractions only — DI and logging contracts, no infrastructure">
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+
+</Project>

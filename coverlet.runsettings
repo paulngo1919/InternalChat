@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<RunSettings>
+
+  <!--
+    Coverage collection settings.
+
+    Constitution Principle III enforces per-layer coverage floors as hard CI gates:
+      Domain 90%   Application 85%   Infrastructure 60%   React 80%
+
+    Coverlet itself can only apply ONE threshold per test run — it has no concept of a
+    per-assembly floor. So this file handles collection and exclusions, and
+    tools/Check-Coverage.ps1 reads the resulting Cobertura report and enforces the four
+    floors independently. CI gate 3 calls that script; a failure there fails the build.
+  -->
+
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+
+          <!-- Test assemblies never count toward their own coverage. -->
+          <IncludeTestAssembly>false</IncludeTestAssembly>
+
+          <!--
+            EF Core migrations are generated, mechanically reviewed, and exercised by the
+            integration suite applying them for real. Counting their thousands of generated
+            lines would inflate Infrastructure coverage into meaninglessness.
+          -->
+          <Exclude>[*]InternalChat.Infrastructure.Persistence.Migrations.*</Exclude>
+          <ExcludeByFile>**/Migrations/*.cs,**/obj/**,**/bin/**</ExcludeByFile>
+          <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+
+          <!-- Trivial get/set accessors would otherwise pad every entity's score. -->
+          <SkipAutoProps>true</SkipAutoProps>
+
+          <SingleHit>false</SingleHit>
+          <UseSourceLink>true</UseSourceLink>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+
+</RunSettings>

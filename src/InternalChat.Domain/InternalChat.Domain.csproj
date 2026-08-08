@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Constitution Principle I: Domain MUST NOT reference any other project, ASP.NET Core,
+    EF Core, Redis, RabbitMQ, or any NuGet package other than the BCL.
+
+    This file having no ItemGroup is the point. Adding one is a build-blocking review defect,
+    and tests/Architecture/DependencyRuleTests.cs asserts it independently of this comment.
+  -->
+
+</Project>

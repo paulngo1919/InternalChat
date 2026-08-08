@@ -1,0 +1,64 @@
+# ---------------------------------------------------------------------------
+# .NET
+# ---------------------------------------------------------------------------
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+packages/
+.vs/
+artifacts/
+TestResults/
+coverage/
+*.coverage
+*.coverlet.json
+coverage.cobertura.xml
+
+# ---------------------------------------------------------------------------
+# Node / frontend
+# ---------------------------------------------------------------------------
+node_modules/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+playwright-report/
+test-results/
+.eslintcache
+
+# ---------------------------------------------------------------------------
+# Secrets — constitution v1.2.0, Principle IV.
+# Secrets are supplied at runtime, never committed. Only deploy/.env.example
+# (non-secret placeholders) belongs in the repository.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+deploy/.env
+deploy/.env.*
+!deploy/.env.example
+*.pem
+*.key
+*.crt
+*.pfx
+deploy/certs/*
+!deploy/certs/.gitkeep
+deploy/secrets/
+
+# ---------------------------------------------------------------------------
+# Local runtime state — Compose volumes must never be committed
+# ---------------------------------------------------------------------------
+deploy/data/
+*.log
+
+# ---------------------------------------------------------------------------
+# Editor / OS
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json

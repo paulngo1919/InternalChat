@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Validates the HTTP API against contracts/openapi.yaml and the RabbitMQ event payloads
+    against contracts/messaging.md, asserting backward compatibility.
+
+    Constitution Principle VI: contract changes MUST be additive. A removed field, a narrowed
+    type, or an optional field made required fails this suite (CI gate 5).
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\InternalChat.Api\InternalChat.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

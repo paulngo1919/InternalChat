@@ -1,0 +1,409 @@
+# =============================================================================
+# InternalChat — application host
+#
+# Constitution v1.2.0, Local Environment:
+#   - one `docker compose up` brings the whole system up, no external account
+#   - every service exposes a health check, and dependents wait on it
+#   - ports, volumes, and image tags are pinned explicitly; `latest` is prohibited
+#
+# Images are pinned by tag AND digest. The tag documents what it is; the digest
+# is what makes the build reproducible when the tag is later re-pointed.
+#
+# NOT IN THIS FILE, deliberately:
+#   - LiveKit / TURN  -> docker-compose.media.yml (second host, US8/US9)
+#   - Prometheus, Grafana, Loki, Jaeger, OTel Collector -> docker-compose.observability.yml (T046)
+# =============================================================================
+
+name: internalchat
+
+# -----------------------------------------------------------------------------
+# Shared fragments
+# -----------------------------------------------------------------------------
+x-restart: &restart
+  restart: unless-stopped
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: '10m'
+      max-file: '3'
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — the single source of truth (Principle VII)
+  # ---------------------------------------------------------------------------
+  postgres:
+    <<: [*restart, *logging]
+    image: postgres:17.10-alpine@sha256:af194ccf3e2d7fe367012c7b88ce8b816c5c889b18a5b316799a1f0d7eac746a
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Deterministic collation. Index ordering must not depend on host locale.
+      POSTGRES_INITDB_ARGS: '--locale=C --encoding=UTF8'
+    command:
+      - postgres
+      # Principle V: any query over 100 ms is logged and reviewed.
+      - -c
+      - log_min_duration_statement=100
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=512MB
+      # pg_stat_statements backs the performance-budget investigation loop.
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - '127.0.0.1:5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks: [backend]
+
+  # ---------------------------------------------------------------------------
+  # Redis — cache, SignalR backplane, presence, revocation set.
+  # Losing it entirely must degrade latency, never correctness (Principle VII).
+  # ---------------------------------------------------------------------------
+  redis:
+    <<: [*restart, *logging]
+    image: redis:7.4.10-alpine@sha256:9702d01c1f10c3ea9f48211b4362e44f154ff02d063e6f7268eba804059f53bf
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD}
+      - --appendonly
+      - 'yes'
+      # A cache that evicts is correct here; a cache that OOMs is not.
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - allkeys-lru
+    volumes:
+      - redis-data:/data
+    ports:
+      - '127.0.0.1:6379:6379'
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli -a "$${REDIS_PASSWORD}" ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks: [backend]
+
+  # ---------------------------------------------------------------------------
+  # RabbitMQ — every cross-boundary side effect (Principle VI)
+  # ---------------------------------------------------------------------------
+  rabbitmq:
+    <<: [*restart, *logging]
+    image: rabbitmq:4.3.4-management-alpine@sha256:39f934e10a7b95179171a70f15f02636201a153a2c689e961fc0f445bac275f2
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      - '127.0.0.1:5672:5672'
+      - '127.0.0.1:${RABBITMQ_MANAGEMENT_PORT}:15672'
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'check_running', '&&', 'rabbitmq-diagnostics', '-q', 'check_local_alarms']
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks: [backend]
+
+  # ---------------------------------------------------------------------------
+  # Keycloak — OIDC. No password is ever stored by this application (FR-001).
+  # ---------------------------------------------------------------------------
+  keycloak:
+    <<: [*restart, *logging]
+    image: quay.io/keycloak/keycloak:26.7.1@sha256:7523ccfbd950f59783504cdf5a0138dae48746dfe36075bbfccdb5a9ee245ee2
+    command: ['start-dev', '--import-realm', '--health-enabled=true', '--metrics-enabled=true']
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_DB_SCHEMA: keycloak
+      KC_HOSTNAME_STRICT: 'false'
+      KC_HTTP_ENABLED: 'true'
+      KC_HTTP_PORT: '8080'
+    volumes:
+      - ./keycloak/import:/opt/keycloak/data/import:ro
+    ports:
+      - '127.0.0.1:${KEYCLOAK_PORT}:8080'
+    # The management port (9000) serves /health/ready. The image is distroless,
+    # so the probe uses the JVM rather than curl, which is not present.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\\nHost: localhost\\nConnection: close\\n\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [backend]
+
+  # ---------------------------------------------------------------------------
+  # MinIO — S3-compatible attachment storage.
+  # Bytes are never served from here directly; see nginx internal redirect (D7).
+  # ---------------------------------------------------------------------------
+  minio:
+    <<: [*restart, *logging]
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:9966a92a734f9411e32f4f41d7d9d826fcdc0f68c4e20b70295bd4e7c11f8a2f
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    ports:
+      - '127.0.0.1:${MINIO_API_PORT}:9000'
+      - '127.0.0.1:${MINIO_CONSOLE_PORT}:9001'
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [backend]
+
+  # Creates the attachment and quarantine buckets, then exits. Idempotent.
+  minio-init:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:9966a92a734f9411e32f4f41d7d9d826fcdc0f68c4e20b70295bd4e7c11f8a2f
+    restart: 'no'
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        mc mb --ignore-existing "local/$${MINIO_BUCKET}"
+        mc mb --ignore-existing "local/$${MINIO_QUARANTINE_BUCKET}"
+        # Both buckets stay private. Access is decided per request by the API
+        # against conversation membership (FR-025), never by a bucket policy.
+        mc anonymous set none "local/$${MINIO_BUCKET}"
+        mc anonymous set none "local/$${MINIO_QUARANTINE_BUCKET}"
+        echo "minio-init: buckets ready"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_QUARANTINE_BUCKET: ${MINIO_QUARANTINE_BUCKET}
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks: [backend]
+
+  # ---------------------------------------------------------------------------
+  # ClamAV — an upload is not retrievable until this records a clean verdict
+  # (FR-024). Cold start takes ~2 minutes to load signatures, hence start_period.
+  # ---------------------------------------------------------------------------
+  clamav:
+    <<: [*restart, *logging]
+    image: clamav/clamav:1.5.3@sha256:afbacf91caa6e02cd3b86238a4b130255bc465c8928dfe505cae63ae22c7e966
+    environment:
+      CLAMAV_NO_MILTERD: 'true'
+      FRESHCLAM_CHECKS: '1'
+    volumes:
+      - clamav-data:/var/lib/clamav
+    healthcheck:
+      test: ['CMD', 'clamdcheck.sh']
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    networks: [backend]
+
+  # ---------------------------------------------------------------------------
+  # NOTE: the `migrations` service — the explicit, idempotent schema step that
+  # must run separately from application start (constitution: Deployment
+  # Strategy) — is added by T027 alongside deploy/Dockerfile.migrations. Until
+  # then `api` and `worker` start against whatever schema exists.
+  # ---------------------------------------------------------------------------
+  # API — stateless, horizontally scalable (Principle V). Holds no session state.
+  # ---------------------------------------------------------------------------
+  api:
+    <<: [*restart, *logging]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
+      ASPNETCORE_HTTP_PORTS: '8080'
+      INTERNALCHAT_ENV: ${INTERNALCHAT_ENV}
+      ConnectionStrings__Postgres: >-
+        Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_APP_USER};Password=${POSTGRES_APP_PASSWORD};Maximum Pool Size=50;Timeout=15
+      ConnectionStrings__Redis: 'redis:6379,password=${REDIS_PASSWORD},abortConnect=false'
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Port: '5672'
+      RabbitMq__User: ${RABBITMQ_USER}
+      RabbitMq__Password: ${RABBITMQ_PASSWORD}
+      RabbitMq__VHost: ${RABBITMQ_VHOST}
+      Keycloak__Authority: http://keycloak:8080/realms/${KEYCLOAK_REALM}
+      Keycloak__Audience: ${KEYCLOAK_CLIENT_ID}
+      Keycloak__ClientId: ${KEYCLOAK_CLIENT_ID}
+      Keycloak__ClientSecret: ${KEYCLOAK_CLIENT_SECRET}
+      Minio__Endpoint: minio:9000
+      Minio__AccessKey: ${MINIO_ROOT_USER}
+      Minio__SecretKey: ${MINIO_ROOT_PASSWORD}
+      Minio__Bucket: ${MINIO_BUCKET}
+      Minio__QuarantineBucket: ${MINIO_QUARANTINE_BUCKET}
+      ClamAv__Host: clamav
+      ClamAv__Port: '3310'
+      LiveKit__Url: ${LIVEKIT_URL}
+      LiveKit__ApiKey: ${LIVEKIT_API_KEY}
+      LiveKit__ApiSecret: ${LIVEKIT_API_SECRET}
+      Cors__AllowedOrigins: ${CORS_ALLOWED_ORIGINS}
+      Attachments__MaxImageBytes: ${MAX_IMAGE_BYTES}
+      Attachments__MaxVideoBytes: ${MAX_VIDEO_BYTES}
+      Authorization__MembershipCacheTtlSeconds: ${MEMBERSHIP_CACHE_TTL_SECONDS}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+      OTEL_SERVICE_NAME: internalchat-api
+      OTEL_SERVICE_NAMESPACE: ${OTEL_SERVICE_NAMESPACE}
+    expose:
+      - '8080'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks: [backend, frontend]
+
+  # ---------------------------------------------------------------------------
+  # Worker — single replica by design. Retention sweeps, attachment scanning,
+  # notification fan-out, and the outbox dispatcher must run exactly once
+  # regardless of API replica count (plan.md, Complexity Tracking).
+  # ---------------------------------------------------------------------------
+  worker:
+    <<: [*restart, *logging]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.worker
+    deploy:
+      replicas: 1
+    environment:
+      DOTNET_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
+      INTERNALCHAT_ENV: ${INTERNALCHAT_ENV}
+      ConnectionStrings__Postgres: >-
+        Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_APP_USER};Password=${POSTGRES_APP_PASSWORD};Maximum Pool Size=20;Timeout=15
+      ConnectionStrings__Redis: 'redis:6379,password=${REDIS_PASSWORD},abortConnect=false'
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Port: '5672'
+      RabbitMq__User: ${RABBITMQ_USER}
+      RabbitMq__Password: ${RABBITMQ_PASSWORD}
+      RabbitMq__VHost: ${RABBITMQ_VHOST}
+      Minio__Endpoint: minio:9000
+      Minio__AccessKey: ${MINIO_ROOT_USER}
+      Minio__SecretKey: ${MINIO_ROOT_PASSWORD}
+      Minio__Bucket: ${MINIO_BUCKET}
+      Minio__QuarantineBucket: ${MINIO_QUARANTINE_BUCKET}
+      ClamAv__Host: clamav
+      ClamAv__Port: '3310'
+      WebPush__PublicKey: ${VAPID_PUBLIC_KEY}
+      WebPush__PrivateKey: ${VAPID_PRIVATE_KEY}
+      WebPush__Subject: ${VAPID_SUBJECT}
+      Retention__Days: ${RETENTION_DAYS}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+      OTEL_SERVICE_NAME: internalchat-worker
+      OTEL_SERVICE_NAMESPACE: ${OTEL_SERVICE_NAMESPACE}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks: [backend]
+
+  # ---------------------------------------------------------------------------
+  # Web — the React build output served by nginx. Static only; no Node runtime
+  # reaches the final image.
+  # ---------------------------------------------------------------------------
+  web:
+    <<: [*restart, *logging]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    expose:
+      - '8080'
+    networks: [frontend]
+
+  # ---------------------------------------------------------------------------
+  # nginx — TLS termination, security headers, and the internal-only attachment
+  # location that streams MinIO bytes after the API authorizes the request
+  # (research.md D7). Configured by T044 and T051.
+  # ---------------------------------------------------------------------------
+  nginx:
+    <<: [*restart, *logging]
+    image: nginx:1.30.4-alpine@sha256:8a4f4b94275ff59d809477799cbbaf1a7ab65ed1871403d05e31fd66bdb8db82
+    # Non-root (constitution: images MUST run as a non-root user). The stock
+    # image expects to write these two paths, so they become tmpfs.
+    user: '101:101'
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certs:/etc/nginx/certs:ro
+    ports:
+      - '${WEB_PORT}:8080'
+      - '${API_PORT}:8081'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget --quiet --tries=1 --spider http://localhost:8080/healthz || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      api:
+        condition: service_started
+      web:
+        condition: service_started
+    networks: [frontend, backend]
+
+# -----------------------------------------------------------------------------
+# Networks — the datastores sit on `backend` only, so nothing on the edge can
+# reach PostgreSQL, Redis, or RabbitMQ without going through the API.
+# -----------------------------------------------------------------------------
+networks:
+  backend:
+    driver: bridge
+  frontend:
+    driver: bridge
+
+# -----------------------------------------------------------------------------
+# Volumes — named and pinned. postgres-data and minio-data are the two that must
+# be backed up and restore-tested before first production deployment
+# (constitution: Deployment Strategy).
+# -----------------------------------------------------------------------------
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:
+  minio-data:
+  clamav-data:

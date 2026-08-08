@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    Constitution Principle I: the Api references Infrastructure ONLY so that Program.cs can
+    register it in the DI container. tests/Architecture/CompositionRootTests.cs fails the build
+    if an Infrastructure type is named anywhere else in this project.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\InternalChat.Application\InternalChat.Application.csproj" />
+    <ProjectReference Include="..\InternalChat.Infrastructure\InternalChat.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+  </ItemGroup>
+
+  <ItemGroup Label="Exposed to the test hosts">
+    <InternalsVisibleTo Include="InternalChat.IntegrationTests" />
+    <InternalsVisibleTo Include="InternalChat.ContractTests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,22 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/InternalChat.Api/InternalChat.Api.csproj" />
+    <Project Path="src/InternalChat.Application/InternalChat.Application.csproj" />
+    <Project Path="src/InternalChat.Domain/InternalChat.Domain.csproj" />
+    <Project Path="src/InternalChat.Infrastructure/InternalChat.Infrastructure.csproj" />
+    <Project Path="src/InternalChat.Worker/InternalChat.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/Architecture/">
+    <Project Path="tests/Architecture/InternalChat.ArchitectureTests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Contract/">
+    <Project Path="tests/Contract/InternalChat.ContractTests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Integration/">
+    <Project Path="tests/Integration/InternalChat.IntegrationTests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Unit/">
+    <Project Path="tests/Unit/InternalChat.UnitTests.csproj" />
+  </Folder>
+</Solution>

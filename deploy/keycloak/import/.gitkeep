@@ -1,0 +1,5 @@
+# Keycloak imports every *-realm.json here on start (--import-realm).
+#
+# The development realm export — 20 employees, roles, and the internalchat-web
+# client — is seeded as part of the US1 work (Phase 3). Until then Keycloak
+# starts with only the bootstrap admin from deploy/.env.

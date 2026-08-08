@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Constitution Principle III: unit tests MUST NOT touch PostgreSQL, Redis, RabbitMQ, the
+    network, the clock, or the file system. Time is injected via IClock. Any test exceeding
+    100 ms is an integration test in the wrong project — UnitTestBase enforces this.
+
+    Coverage floors (CI gates): Domain 90%, Application 85%.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\InternalChat.Domain\InternalChat.Domain.csproj" />
+    <ProjectReference Include="..\..\src\InternalChat.Application\InternalChat.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

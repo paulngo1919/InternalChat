@@ -1,0 +1,60 @@
+# =============================================================================
+# InternalChat Worker — multi-stage, non-root, no SDK in the final image.
+#
+# Runs the outbox dispatcher, RabbitMQ consumers, the retention sweep, and
+# attachment scanning. Single replica by design (plan.md, Complexity Tracking).
+#
+# Build context is the repository root:
+#   docker build -f deploy/Dockerfile.worker .
+# =============================================================================
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine3.22@sha256:ddae163c8bd4d12df3bd767bdea4afc248abfd1148cdbb8ac549fa80bbb397dc AS restore
+WORKDIR /src
+
+COPY Directory.Build.props Directory.Packages.props InternalChat.slnx ./
+COPY src/InternalChat.Domain/InternalChat.Domain.csproj                 src/InternalChat.Domain/
+COPY src/InternalChat.Application/InternalChat.Application.csproj       src/InternalChat.Application/
+COPY src/InternalChat.Infrastructure/InternalChat.Infrastructure.csproj src/InternalChat.Infrastructure/
+COPY src/InternalChat.Worker/InternalChat.Worker.csproj                 src/InternalChat.Worker/
+
+RUN dotnet restore src/InternalChat.Worker/InternalChat.Worker.csproj
+
+FROM restore AS publish
+WORKDIR /src
+
+COPY src/InternalChat.Domain/         src/InternalChat.Domain/
+COPY src/InternalChat.Application/    src/InternalChat.Application/
+COPY src/InternalChat.Infrastructure/ src/InternalChat.Infrastructure/
+COPY src/InternalChat.Worker/         src/InternalChat.Worker/
+
+RUN dotnet publish src/InternalChat.Worker/InternalChat.Worker.csproj \
+        --configuration Release \
+        --no-restore \
+        --output /app/publish \
+        -p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine3.22@sha256:86b43b7250c683781587f9e8d30a2315c5684f1b1fb788a9aa74e86bc06df4a5 AS final
+
+# ffmpeg is used for exactly one thing: extracting a poster frame and moving the
+# MP4 `moov` atom to the front. No transcoding — that CPU cost would compete with
+# the messaging latency budget on this host (research.md D8).
+RUN apk add --no-cache wget=1.25.0-r1 ffmpeg=6.1.2-r2 \
+    && addgroup -g 64198 -S app \
+    && adduser -u 64198 -S -G app -h /app -s /sbin/nologin app
+
+WORKDIR /app
+COPY --from=publish --chown=root:root --chmod=555 /app/publish ./
+
+# Serves /health/ready only — the worker exposes no business endpoints.
+ENV ASPNETCORE_HTTP_PORTS=8080 \
+    DOTNET_RUNNING_IN_CONTAINER=true \
+    DOTNET_EnableDiagnostics=0
+
+EXPOSE 8080
+
+USER 64198:64198
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
+    CMD wget --quiet --tries=1 --spider http://localhost:8080/health/ready || exit 1
+
+ENTRYPOINT ["dotnet", "InternalChat.Worker.dll"]

@@ -1,0 +1,73 @@
+# =============================================================================
+# InternalChat API — multi-stage, non-root, no SDK in the final image.
+#
+# Constitution v1.2.0, Build and Image Requirements:
+#   - multi-stage producing a minimal runtime image; SDK layers MUST NOT reach it
+#   - runs as a non-root user, declares HEALTHCHECK, contains no secrets or source
+#   - reproducible from the repository alone, with pinned base-image digests
+#
+# Build context is the repository root:
+#   docker build -f deploy/Dockerfile.api .
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1 — restore. Split from build so a source-only change reuses the
+# restore layer instead of re-downloading every package.
+# -----------------------------------------------------------------------------
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine3.22@sha256:ddae163c8bd4d12df3bd767bdea4afc248abfd1148cdbb8ac549fa80bbb397dc AS restore
+WORKDIR /src
+
+# Central package management: these three decide every resolved version.
+COPY Directory.Build.props Directory.Packages.props InternalChat.slnx ./
+COPY src/InternalChat.Domain/InternalChat.Domain.csproj                 src/InternalChat.Domain/
+COPY src/InternalChat.Application/InternalChat.Application.csproj       src/InternalChat.Application/
+COPY src/InternalChat.Infrastructure/InternalChat.Infrastructure.csproj src/InternalChat.Infrastructure/
+COPY src/InternalChat.Api/InternalChat.Api.csproj                       src/InternalChat.Api/
+
+RUN dotnet restore src/InternalChat.Api/InternalChat.Api.csproj
+
+# -----------------------------------------------------------------------------
+# Stage 2 — build and publish
+# -----------------------------------------------------------------------------
+FROM restore AS publish
+WORKDIR /src
+
+COPY src/InternalChat.Domain/         src/InternalChat.Domain/
+COPY src/InternalChat.Application/    src/InternalChat.Application/
+COPY src/InternalChat.Infrastructure/ src/InternalChat.Infrastructure/
+COPY src/InternalChat.Api/            src/InternalChat.Api/
+
+# TreatWarningsAsErrors comes from Directory.Build.props, so a warning fails the
+# image build — which is the point (constitution CI gate 1).
+RUN dotnet publish src/InternalChat.Api/InternalChat.Api.csproj \
+        --configuration Release \
+        --no-restore \
+        --output /app/publish \
+        -p:UseAppHost=false
+
+# -----------------------------------------------------------------------------
+# Stage 3 — runtime. ASP.NET runtime only; no SDK, no source, no tests.
+# -----------------------------------------------------------------------------
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine3.22@sha256:86b43b7250c683781587f9e8d30a2315c5684f1b1fb788a9aa74e86bc06df4a5 AS final
+
+# wget backs the HEALTHCHECK below; the alpine runtime image does not ship curl.
+RUN apk add --no-cache wget=1.25.0-r1 \
+    && addgroup -g 64198 -S app \
+    && adduser -u 64198 -S -G app -h /app -s /sbin/nologin app
+
+WORKDIR /app
+COPY --from=publish --chown=root:root --chmod=555 /app/publish ./
+
+ENV ASPNETCORE_HTTP_PORTS=8080 \
+    DOTNET_RUNNING_IN_CONTAINER=true \
+    DOTNET_EnableDiagnostics=0
+
+EXPOSE 8080
+
+# Non-root. The image has no writable application directory by design.
+USER 64198:64198
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
+    CMD wget --quiet --tries=1 --spider http://localhost:8080/health/ready || exit 1
+
+ENTRYPOINT ["dotnet", "InternalChat.Api.dll"]

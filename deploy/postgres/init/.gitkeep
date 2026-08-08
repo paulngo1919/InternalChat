@@ -1,0 +1,7 @@
+# Scripts here run once, in filename order, when the postgres volume is first
+# created. Reserved for cluster-level setup that must precede EF Core migrations:
+# the keycloak schema, the unaccent extension (research.md D9), and the
+# application role that T048 grants INSERT-only on audit_event.
+#
+# Application schema itself belongs in EF Core migrations (T026), never here —
+# migrations are forward-only and reviewed; init scripts are neither.

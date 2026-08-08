@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    These tests are what turn Constitution Principles I and IV from habits into build gates.
+
+    They assert the Dependency Rule holds, that Infrastructure is named only in composition
+    roots, that no Domain entity crosses an API boundary, and that every mapped endpoint and
+    hub method declares an explicit authorization policy. A review checklist cannot fail a
+    build; this project can.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\InternalChat.Domain\InternalChat.Domain.csproj" />
+    <ProjectReference Include="..\..\src\InternalChat.Application\InternalChat.Application.csproj" />
+    <ProjectReference Include="..\..\src\InternalChat.Infrastructure\InternalChat.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\InternalChat.Api\InternalChat.Api.csproj" />
+    <ProjectReference Include="..\..\src\InternalChat.Worker\InternalChat.Worker.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="NetArchTest.Rules" />
+    <!--
+      Needed by AuthorizationCoverageTests: the only reliable way to enumerate Minimal API
+      endpoints is to build the host and read EndpointDataSource. Reflection cannot see
+      endpoints registered by code rather than by attribute.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

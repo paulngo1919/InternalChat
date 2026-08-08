@@ -1,0 +1,46 @@
+# Constitution v1.2.0, Build and Image Requirements:
+# images MUST contain no secrets, .env files, test fixtures, or source beyond
+# what the build needs. Keeping the context small also keeps builds fast.
+
+.git/
+.github/
+.vs/
+.idea/
+.vscode/
+
+# Build output — never ship a host-built binary into an image
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/build/
+**/*.tsbuildinfo
+artifacts/
+TestResults/
+coverage/
+
+# Secrets
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+**/*.crt
+**/*.pfx
+deploy/certs/
+deploy/secrets/
+deploy/data/
+
+# Tests and specs are not runtime artifacts
+tests/
+specs/
+.specify/
+.claude/
+
+# Docker's own files
+deploy/Dockerfile*
+.dockerignore
+
+**/.DS_Store
+**/Thumbs.db
+**/*.log

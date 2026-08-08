@@ -1,0 +1,390 @@
+# CI pipeline — the ten blocking gates from Constitution v1.2.0,
+# "Development Workflow & Quality Gates".
+#
+# Every gate here is BLOCKING. None may be made advisory, skipped with continue-on-error, or
+# moved behind a manual approval. Constitution Principle III gives flaky tests one working day
+# to be fixed or deleted — retrying a test to make CI green is prohibited.
+#
+# Gate 10 (cost) is why every tool below is free and self-hostable: Trivy, Gitleaks, Semgrep OSS,
+# and Testcontainers all run without an account. A gate that can only be reproduced inside a paid
+# service is prohibited by Principle VIII.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  NODE_VERSION: '22'
+  DOTNET_NOLOGO: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  CI: 'true'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Gate 1 — Build with TreatWarningsAsErrors; analyzers and format checks clean
+  # ---------------------------------------------------------------------------
+  build:
+    name: 'Gate 1 · Build & analyzers'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore
+
+      # TreatWarningsAsErrors is set in Directory.Build.props, so any analyzer warning
+      # fails here. Suppressions require an inline justification naming the rule (Principle II).
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Verify formatting
+        run: dotnet format --verify-no-changes --no-restore
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: |
+            src/**/bin/Release/
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Gate 2 — Architecture tests verifying the Dependency Rule
+  # Gate 3 — Unit tests + per-layer coverage floors
+  # ---------------------------------------------------------------------------
+  unit-and-architecture:
+    name: 'Gates 2-3 · Architecture & unit tests'
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore
+
+      # Gate 2. These assert Domain references nothing outward, Application never references
+      # Infrastructure, Infrastructure is named only in composition roots, no Domain entity
+      # crosses an API boundary, and every endpoint declares an authorization policy.
+      # This is what makes Principles I and IV build gates rather than review habits.
+      - name: 'Gate 2 · Architecture tests'
+        run: >
+          dotnet test tests/Architecture
+          --no-restore --configuration Release
+          --logger "trx;LogFileName=architecture.trx"
+
+      # Gate 3. Unit tests must not touch PostgreSQL, Redis, RabbitMQ, the network, the clock,
+      # or the file system, and each must finish inside 100 ms (UnitTestBase enforces both).
+      - name: 'Gate 3 · Unit tests with coverage'
+        run: >
+          dotnet test tests/Unit
+          --no-restore --configuration Release
+          --settings coverlet.runsettings
+          --results-directory ./TestResults
+          --logger "trx;LogFileName=unit.trx"
+
+      - name: 'Gate 3 · Enforce per-layer coverage floors'
+        shell: pwsh
+        run: ./tools/Check-Coverage.ps1 -ResultsPath ./TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: ./TestResults
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Gate 4 — Integration tests against real PostgreSQL, Redis, RabbitMQ, MinIO, Keycloak
+  # Gate 5 — Contract tests (OpenAPI + message contract backward compatibility)
+  # ---------------------------------------------------------------------------
+  integration-and-contract:
+    name: 'Gates 4-5 · Integration & contract tests'
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore
+
+      # Gate 4. Testcontainers starts real services. Principle III prohibits mocking these —
+      # an in-memory provider does not implement PostgreSQL semantics (constraints,
+      # SKIP LOCKED, full-text search, partitioning), so a pass against it proves nothing.
+      # Docker is available on ubuntu-latest runners with no extra setup.
+      - name: 'Gate 4 · Integration tests (Testcontainers)'
+        run: >
+          dotnet test tests/Integration
+          --no-restore --configuration Release
+          --settings coverlet.runsettings
+          --results-directory ./TestResults
+          --logger "trx;LogFileName=integration.trx"
+
+      # Gate 5. Fails on a removed field, a narrowed type, or an optional field made required.
+      - name: 'Gate 5 · Contract tests'
+        run: >
+          dotnet test tests/Contract
+          --no-restore --configuration Release
+          --logger "trx;LogFileName=contract.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: ./TestResults
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Gate 6 — Security: SAST, dependency scan, container scan, secret scan
+  # ---------------------------------------------------------------------------
+  security:
+    name: 'Gate 6 · Security scanning'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Gitleaks needs history to scan past commits
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore
+
+      # Critical or High with a fix available blocks the merge.
+      # Remediation SLA: 7 days Critical, 30 days High.
+      - name: Vulnerable NuGet packages
+        run: |
+          dotnet list package --vulnerable --include-transitive 2>&1 | tee vuln.txt
+          if grep -qiE '\b(Critical|High)\b' vuln.txt; then
+            echo "::error::Critical or High severity vulnerability in NuGet dependencies"
+            exit 1
+          fi
+
+      - name: Vulnerable npm packages
+        working-directory: src/internalchat-web
+        run: npm audit --audit-level=high
+
+      - name: 'Trivy · filesystem and dependency scan'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: 'Gitleaks · secret scan'
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 'Semgrep · SAST'
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: >-
+            p/default
+            p/csharp
+            p/typescript
+            p/owasp-top-ten
+            p/secrets
+
+  # ---------------------------------------------------------------------------
+  # Gate 7 — Performance smoke test on the messaging path
+  # ---------------------------------------------------------------------------
+  performance:
+    name: 'Gate 7 · Performance smoke test'
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install k6
+        run: |
+          curl -fsSL https://github.com/grafana/k6/releases/download/v0.55.0/k6-v0.55.0-linux-amd64.tar.gz \
+            | tar -xz --strip-components=1 -C /usr/local/bin k6-v0.55.0-linux-amd64/k6
+          k6 version
+
+      # Budgets from plan.md: send accept p95 150 ms, history p95 250 ms, search p95 800 ms.
+      # This is a smoke test on PR. The real verification runs against a database seeded to
+      # full retention volume — a budget verified on a thousand rows is not verified.
+      - name: Run messaging smoke test
+        run: |
+          if [ -f tests/Load/messaging.js ]; then
+            k6 run --quiet tests/Load/messaging.js
+          else
+            echo "::notice::tests/Load/messaging.js not present yet (arrives with T107)"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Gate 8 — Frontend: strict compile, lint, unit tests, bundle budget, accessibility
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: 'Gate 8 · Frontend'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/internalchat-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: src/internalchat-web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: TypeScript strict compile
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Unit tests
+        run: npm test --if-present
+
+      # Constitution: initial JS bundle under 300 KB gzipped. The meetings feature is
+      # lazy-loaded specifically so the LiveKit SDK stays out of this number (research D13).
+      - name: Build and check bundle budget
+        run: |
+          npm run build
+          BUDGET=307200
+          TOTAL=0
+          for f in dist/assets/*.js; do
+            [ -e "$f" ] || continue
+            SIZE=$(gzip -c "$f" | wc -c)
+            echo "  $(basename "$f"): ${SIZE} bytes gzipped"
+            TOTAL=$((TOTAL + SIZE))
+          done
+          echo "Total initial JS: ${TOTAL} bytes gzipped (budget ${BUDGET})"
+          if [ "$TOTAL" -gt "$BUDGET" ]; then
+            echo "::error::Initial JS bundle ${TOTAL} exceeds the 300 KB gzipped budget"
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Gate 9 — Every image builds and `docker compose up` reaches a healthy state
+  # ---------------------------------------------------------------------------
+  docker:
+    name: 'Gate 9 · Docker stack'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose file
+        run: docker compose -f deploy/docker-compose.yml config --quiet
+
+      - name: Build images
+        run: docker compose -f deploy/docker-compose.yml build
+
+      # Constitution: onboarding is clone, cp .env.example .env, docker compose up.
+      # If this step needs a fourth action, that is a defect to automate away, not to document.
+      - name: Stack reaches healthy from a clean checkout
+        run: |
+          cp deploy/.env.example deploy/.env
+          docker compose -f deploy/docker-compose.yml up -d --wait --wait-timeout 300
+
+      - name: Report status on failure
+        if: failure()
+        run: |
+          docker compose -f deploy/docker-compose.yml ps
+          docker compose -f deploy/docker-compose.yml logs --tail 100
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f deploy/docker-compose.yml down -v
+
+  # ---------------------------------------------------------------------------
+  # Gate 10 — Cost: no dependency introduces a paid service, licence fee, or metered tier
+  # ---------------------------------------------------------------------------
+  cost:
+    name: 'Gate 10 · Zero-cost dependency check'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Principle VIII. MassTransit v9 is the most likely accidental cost in a .NET codebase —
+      # it is the reflexive default for messaging and its v9 licence is commercial.
+      # research.md D3 records the decision to use RabbitMQ.Client directly instead.
+      - name: Reject commercially licensed packages
+        run: |
+          BANNED='MassTransit|NServiceBus|Rebus\.Pro|Telerik|DevExpress|Syncfusion|ComponentOne|Aspose|LiveKit\.Cloud'
+          if grep -rEn "$BANNED" --include='*.csproj' --include='Directory.Packages.props' .; then
+            echo "::error::A commercially licensed package was introduced. Constitution Principle VIII forbids paid dependencies."
+            exit 1
+          fi
+          echo "No commercially licensed packages found."
+
+      - name: Reject hosted-service endpoints in configuration
+        run: |
+          BANNED_HOSTS='cloud\.livekit\.io|datadoghq\.com|newrelic\.com|sentry\.io|\.applicationinsights\.azure\.com|amazonaws\.com|\.azure\.com|googleapis\.com'
+          if grep -rEn "$BANNED_HOSTS" \
+               --include='*.json' --include='*.yml' --include='*.yaml' --include='*.cs' --include='*.ts' \
+               --exclude-dir=node_modules --exclude-dir=bin --exclude-dir=obj --exclude-dir=specs .; then
+            echo "::error::A hosted third-party service endpoint was introduced. Every component must be self-hostable."
+            exit 1
+          fi
+          echo "No hosted-service endpoints found."
+
+  # ---------------------------------------------------------------------------
+  # Aggregate — one required status check for branch protection
+  # ---------------------------------------------------------------------------
+  ci:
+    name: 'CI'
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - build
+      - unit-and-architecture
+      - integration-and-contract
+      - security
+      - performance
+      - frontend
+      - docker
+      - cost
+    steps:
+      - name: Fail if any gate failed
+        run: |
+          echo '${{ toJSON(needs) }}' > needs.json
+          if grep -qE '"result": *"(failure|cancelled)"' needs.json; then
+            echo "::error::One or more constitution gates failed. All ten gates are blocking."
+            cat needs.json
+            exit 1
+          fi
+          echo "All constitution gates passed."

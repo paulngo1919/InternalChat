@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Constitution Principle III: integration tests run against REAL PostgreSQL, Redis, RabbitMQ,
+    MinIO, and Keycloak via Testcontainers. Mocking these here is prohibited — an in-memory
+    provider does not implement PostgreSQL semantics (constraints, SKIP LOCKED, full-text
+    search, partitioning), so a test that passes against it proves nothing.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\InternalChat.Api\InternalChat.Api.csproj" />
+    <ProjectReference Include="..\..\src\InternalChat.Infrastructure\InternalChat.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\InternalChat.Worker\InternalChat.Worker.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Testcontainers" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Testcontainers.Redis" />
+    <PackageReference Include="Testcontainers.RabbitMq" />
+    <PackageReference Include="Testcontainers.Minio" />
+    <PackageReference Include="Testcontainers.Keycloak" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

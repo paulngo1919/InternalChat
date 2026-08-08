@@ -1,0 +1,3 @@
+# Drop-in server blocks are included from nginx.conf. Kept empty on purpose;
+# T044 (security headers, CORS) and T051 (TLS, attachment internal redirect)
+# decide whether their configuration lands here or in nginx.conf directly.

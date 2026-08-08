@@ -1,0 +1,782 @@
+openapi: 3.1.0
+info:
+  title: InternalChat API
+  version: 1.0.0
+  description: >
+    HTTP contract for the enterprise internal chat platform.
+    All endpoints require a Keycloak-issued bearer token and a resource-scoped
+    authorization policy. Errors use Problem Details (RFC 9457).
+servers:
+  - url: /api/v1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Conversations
+  - name: Messages
+  - name: Attachments
+  - name: Search
+  - name: Notifications
+  - name: Meetings
+  - name: Directory
+  - name: Admin
+
+paths:
+  /me:
+    get:
+      tags: [Directory]
+      summary: Current employee profile and notification capability
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CurrentEmployee" }
+
+  /me/sessions:
+    get:
+      tags: [Directory]
+      summary: List this employee's active sessions (FR-005)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Session" }
+
+  /me/sessions/{sessionId}:
+    delete:
+      tags: [Directory]
+      summary: Revoke one of this employee's own sessions (FR-005)
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Revoked }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /directory/employees:
+    get:
+      tags: [Directory]
+      summary: Search active employees to start a conversation (FR-007)
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 50 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EmployeeSummary" }
+
+  /conversations:
+    get:
+      tags: [Conversations]
+      summary: List conversations this employee belongs to, with unread counts
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 100 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConversationPage" }
+    post:
+      tags: [Conversations]
+      summary: Create a direct or group conversation (FR-007, FR-008)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateConversationRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conversation" }
+        "200":
+          description: >
+            An existing direct conversation between this pair was returned rather than
+            creating a duplicate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conversation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422":
+          description: A named member is deactivated and cannot be added
+
+  /conversations/{conversationId}:
+    parameters:
+      - { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Conversations]
+      summary: Conversation detail
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conversation" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /conversations/{conversationId}/members:
+    parameters:
+      - { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Conversations]
+      summary: List members
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Member" }
+    post:
+      tags: [Conversations]
+      summary: Add a member (FR-008). Refused for direct conversations.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [employeeId]
+              properties:
+                employeeId: { type: string, format: uuid }
+                role: { $ref: "#/components/schemas/MembershipRole" }
+      responses:
+        "201": { description: Added }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Already a member }
+        "422": { description: Employee is deactivated, or conversation is direct }
+
+  /conversations/{conversationId}/members/{employeeId}:
+    parameters:
+      - { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: employeeId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      tags: [Conversations]
+      summary: >
+        Remove a member (FR-008). Takes effect immediately for new messages, files,
+        and search results.
+      responses:
+        "204": { description: Removed }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { description: Cannot remove a participant from a direct conversation }
+
+  /conversations/{conversationId}/messages:
+    parameters:
+      - { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Messages]
+      summary: Keyset-paginated history (FR-013). Never returns below the caller's visibleFromSeq.
+      parameters:
+        - name: beforeSeq
+          in: query
+          schema: { type: integer, format: int64 }
+          description: Return messages with seq strictly below this value, newest first.
+        - name: afterSeq
+          in: query
+          schema: { type: integer, format: int64 }
+          description: Catch-up after reconnect. Returns messages above this seq, oldest first.
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 100 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessagePage" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Messages]
+      summary: >
+        Send a message (FR-009, FR-011). Idempotent on clientMessageKey — a retry returns
+        200 with the existing message rather than creating a duplicate.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SendMessageRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "200":
+          description: Already accepted under this clientMessageKey (idempotent replay)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /conversations/{conversationId}/messages/{messageId}:
+    parameters:
+      - { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: messageId, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      tags: [Messages]
+      summary: Edit own message within 24 hours (FR-014)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, minLength: 1, maxLength: 8000 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "403": { description: Not the author }
+        "422": { description: Edit window has expired }
+    delete:
+      tags: [Messages]
+      summary: Delete own message within 24 hours (FR-014). Leaves a visible tombstone.
+      responses:
+        "204": { description: Deleted }
+        "403": { description: Not the author }
+        "422": { description: Delete window has expired }
+
+  /conversations/{conversationId}/read-state:
+    parameters:
+      - { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      tags: [Notifications]
+      summary: >
+        Advance read position (FR-036). Monotonic — a lower value is ignored, not applied,
+        so out-of-order device reports cannot move unread state backwards.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lastReadSeq]
+              properties:
+                lastReadSeq: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: Effective read state after the monotonic merge
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReadState" }
+
+  /conversations/{conversationId}/attachments:
+    parameters:
+      - { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Attachments]
+      summary: >
+        Reserve an upload (FR-023). Validates kind, content type, size, and duration
+        BEFORE any bytes are transferred, then returns a one-time upload location.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RequestUploadRequest" }
+      responses:
+        "201":
+          description: Upload reserved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadTicket" }
+        "413": { description: Exceeds the size limit for this kind }
+        "415": { description: Content type is not on the allow-list }
+        "507": { description: Attachment storage is at capacity (FR-028) }
+
+  /attachments/{attachmentId}:
+    parameters:
+      - { name: attachmentId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Attachments]
+      summary: Attachment metadata and scan status
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Attachment" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /attachments/{attachmentId}/content:
+    parameters:
+      - { name: attachmentId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Attachments]
+      summary: >
+        Retrieve attachment bytes (FR-025). Membership is checked on EVERY request; there is
+        no bearer URL. On success the API emits an internal redirect and the reverse proxy
+        streams the bytes with range support. Never cacheable by a shared cache.
+      parameters:
+        - { name: Range, in: header, schema: { type: string } }
+      responses:
+        "200": { description: Full content (streamed by the reverse proxy) }
+        "206": { description: Partial content (FR-022 progressive playback) }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: Not found, deleted, or not yet scanned clean }
+        "451": { description: Blocked — the scan found the file malicious (FR-024) }
+
+  /search/messages:
+    get:
+      tags: [Search]
+      summary: >
+        Full-text search restricted to the caller's conversations (FR-029, FR-030).
+        Never reveals the existence of content in conversations the caller cannot access.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2 } }
+        - { name: conversationId, in: query, schema: { type: string, format: uuid } }
+        - { name: authorId, in: query, schema: { type: string, format: uuid } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - name: hasAttachment
+          in: query
+          schema: { type: string, enum: [any, image, video] }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 25, maximum: 100 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchResultPage" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /notifications/preferences:
+    get:
+      tags: [Notifications]
+      summary: Get do-not-disturb and digest preferences (FR-037, FR-038)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationPreferences" }
+    put:
+      tags: [Notifications]
+      summary: Update preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NotificationPreferences" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationPreferences" }
+
+  /notifications/subscriptions:
+    post:
+      tags: [Notifications]
+      summary: Register this browser for push (FR-034)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PushSubscriptionRequest" }
+      responses:
+        "201": { description: Registered }
+
+  /conversations/{conversationId}/meetings:
+    parameters:
+      - { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Meetings]
+      summary: >
+        Start a meeting (FR-041). Refused at the platform-wide participant ceiling (FR-044)
+        and when the media host is unreachable — the rest of the platform is unaffected.
+      responses:
+        "201":
+          description: Meeting started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Meeting" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503":
+          description: >
+            Meetings are unavailable (capacity reached, or the media host is down).
+            Includes retryAfterSeconds. Messaging is unaffected.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /meetings/{meetingId}/token:
+    parameters:
+      - { name: meetingId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Meetings]
+      summary: >
+        Mint a short-lived media-server join token. This endpoint IS the meeting access
+        control (FR-041) — the media server trusts the token completely, so membership is
+        verified here and nowhere else.
+      responses:
+        "201":
+          description: Token issued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeetingToken" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Meeting is full at 25 participants (FR-042) }
+        "503": { description: Meetings unavailable }
+
+  /admin/retention:
+    get:
+      tags: [Admin]
+      summary: Current retention policy (FR-053)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetentionPolicy" }
+    put:
+      tags: [Admin]
+      summary: Change the retention period (FR-054). Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RetentionPolicy" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetentionPolicy" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/exports:
+    post:
+      tags: [Admin]
+      summary: Request an export of a conversation or an employee's content (FR-055). Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExportRequest" }
+      responses:
+        "202":
+          description: Export accepted; poll for completion
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExportJob" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    BadRequest:
+      description: Validation failed
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Forbidden:
+      description: >
+        Not a member of this resource. Indistinguishable from 404 in body and timing, so that
+        a refusal never reveals that the resource exists (SC-017).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotFound:
+      description: Not found
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        Retry-After: { schema: { type: integer } }
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457. Never contains stack traces, SQL, or internal hostnames.
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        traceId: { type: string }
+
+    CurrentEmployee:
+      type: object
+      required: [id, displayName, email, canReceiveNotifications]
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        email: { type: string, format: email }
+        avatarUrl: { type: string, nullable: true }
+        isAdmin: { type: boolean }
+        canReceiveNotifications:
+          type: boolean
+          description: >
+            False when this browser has no live push subscription. FR-040 requires the client
+            to tell the employee plainly rather than let them assume they are reachable.
+        notificationBlockReason:
+          type: string
+          nullable: true
+          enum: [permission_denied, not_installed, unsupported_browser, no_subscription, null]
+
+    Session:
+      type: object
+      properties:
+        id: { type: string }
+        userAgent: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        isCurrent: { type: boolean }
+
+    EmployeeSummary:
+      type: object
+      required: [id, displayName, status]
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        email: { type: string, format: email }
+        avatarUrl: { type: string, nullable: true }
+        status: { type: string, enum: [active, deactivated] }
+        presence: { type: string, enum: [online, away, offline, dnd] }
+
+    MembershipRole:
+      type: string
+      enum: [member, admin]
+
+    Conversation:
+      type: object
+      required: [id, kind, historyVisibility, lastSeq]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [direct, group] }
+        name: { type: string, nullable: true }
+        historyVisibility:
+          type: string
+          enum: [from_join, full]
+          description: Displayed to members, per US3 scenario 4.
+        lastSeq: { type: integer, format: int64 }
+        unreadCount: { type: integer }
+        muteduntil: { type: string, format: date-time, nullable: true }
+        memberCount: { type: integer }
+        lastMessage: { $ref: "#/components/schemas/Message" }
+
+    ConversationPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Conversation" }
+        nextCursor: { type: string, nullable: true }
+
+    CreateConversationRequest:
+      type: object
+      required: [kind, memberIds]
+      properties:
+        kind: { type: string, enum: [direct, group] }
+        name: { type: string, nullable: true, maxLength: 200 }
+        memberIds:
+          type: array
+          items: { type: string, format: uuid }
+          minItems: 1
+        historyVisibility: { type: string, enum: [from_join, full], default: from_join }
+
+    Member:
+      type: object
+      properties:
+        employee: { $ref: "#/components/schemas/EmployeeSummary" }
+        role: { $ref: "#/components/schemas/MembershipRole" }
+        joinedAt: { type: string, format: date-time }
+
+    Message:
+      type: object
+      required: [id, conversationId, seq, authorId, sentAt]
+      properties:
+        id: { type: string, format: uuid }
+        conversationId: { type: string, format: uuid }
+        seq:
+          type: integer
+          format: int64
+          description: Server-assigned, gapless per conversation. The ordering authority.
+        authorId: { type: string, format: uuid }
+        clientMessageKey: { type: string }
+        body: { type: string, nullable: true, description: Null when deleted }
+        sentAt: { type: string, format: date-time }
+        editedAt: { type: string, format: date-time, nullable: true }
+        deletedAt: { type: string, format: date-time, nullable: true }
+        mentions:
+          type: array
+          items: { type: string, format: uuid }
+        attachments:
+          type: array
+          items: { $ref: "#/components/schemas/Attachment" }
+
+    MessagePage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Message" }
+        nextCursor: { type: string, nullable: true }
+        hasMore: { type: boolean }
+
+    SendMessageRequest:
+      type: object
+      required: [clientMessageKey, body]
+      properties:
+        clientMessageKey:
+          type: string
+          description: >
+            Client-generated ULID. The uniqueness of (conversationId, clientMessageKey) is what
+            makes a retried send idempotent rather than duplicated (FR-011).
+        body: { type: string, minLength: 1, maxLength: 8000 }
+        attachmentIds:
+          type: array
+          items: { type: string, format: uuid }
+        mentions:
+          type: array
+          items: { type: string, format: uuid }
+
+    ReadState:
+      type: object
+      properties:
+        conversationId: { type: string, format: uuid }
+        lastReadSeq: { type: integer, format: int64 }
+        unreadCount: { type: integer }
+
+    RequestUploadRequest:
+      type: object
+      required: [kind, contentType, byteSize, fileName]
+      properties:
+        kind: { type: string, enum: [image, video] }
+        contentType: { type: string }
+        byteSize: { type: integer, format: int64 }
+        durationSeconds: { type: integer, nullable: true }
+        fileName: { type: string }
+
+    UploadTicket:
+      type: object
+      properties:
+        attachmentId: { type: string, format: uuid }
+        uploadUrl:
+          type: string
+          description: One-time quarantine upload location. Not a retrieval address.
+        expiresAt: { type: string, format: date-time }
+
+    Attachment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [image, video] }
+        contentType: { type: string }
+        byteSize: { type: integer, format: int64 }
+        durationSeconds: { type: integer, nullable: true }
+        fileName: { type: string }
+        scanStatus: { type: string, enum: [pending, clean, infected, failed] }
+        contentUrl:
+          type: string
+          nullable: true
+          description: Present only when scanStatus is clean. Always authorized per request.
+        posterUrl: { type: string, nullable: true }
+
+    SearchResultPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              message: { $ref: "#/components/schemas/Message" }
+              conversationId: { type: string, format: uuid }
+              conversationName: { type: string, nullable: true }
+              highlight: { type: string }
+              rank: { type: number, format: float }
+        nextCursor: { type: string, nullable: true }
+        truncated:
+          type: boolean
+          description: >
+            True when the result set was cut short to meet the latency budget. FR-033 requires
+            saying so rather than silently returning a partial answer.
+
+    NotificationPreferences:
+      type: object
+      properties:
+        dndStart: { type: string, nullable: true, example: "18:00" }
+        dndEnd: { type: string, nullable: true, example: "08:00" }
+        timeZone: { type: string, example: "Asia/Ho_Chi_Minh" }
+        digestAfterMinutes: { type: integer, default: 60 }
+
+    PushSubscriptionRequest:
+      type: object
+      required: [endpoint, p256dh, auth]
+      properties:
+        endpoint: { type: string }
+        p256dh: { type: string }
+        auth: { type: string }
+
+    Meeting:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        conversationId: { type: string, format: uuid }
+        startedBy: { type: string, format: uuid }
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time, nullable: true }
+        participantCount: { type: integer }
+        maxParticipants: { type: integer, default: 25 }
+
+    MeetingToken:
+      type: object
+      properties:
+        token: { type: string, description: Short-lived media-server join token }
+        mediaServerUrl: { type: string }
+        expiresAt: { type: string, format: date-time }
+
+    RetentionPolicy:
+      type: object
+      required: [retentionMonths]
+      properties:
+        retentionMonths: { type: integer, minimum: 1, default: 12 }
+        appliesFrom: { type: string, format: date-time }
+        nextSweepAt: { type: string, format: date-time }
+
+    ExportRequest:
+      type: object
+      properties:
+        conversationId: { type: string, format: uuid, nullable: true }
+        employeeId: { type: string, format: uuid, nullable: true }
+        from: { type: string, format: date, nullable: true }
+        to: { type: string, format: date, nullable: true }
+        reason: { type: string, description: Recorded in the audit log }
+
+    ExportJob:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [queued, running, completed, failed] }
+        downloadUrl: { type: string, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true }

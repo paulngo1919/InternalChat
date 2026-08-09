@@ -60,6 +60,16 @@ public class ChatDbContext : DbContext, IUnitOfWork
     public DbSet<Audit.AuditEventRecord> AuditEvents => Set<Audit.AuditEventRecord>();
 
     /// <summary>
+    /// Directory projection (FR-001). The platform never owns employee lifecycle.
+    /// </summary>
+    public DbSet<Domain.Employees.Employee> Employees => Set<Domain.Employees.Employee>();
+
+    /// <summary>
+    /// The authorization record. Every access decision in the platform resolves to a row here.
+    /// </summary>
+    public DbSet<Domain.Conversations.Membership> Memberships => Set<Domain.Conversations.Membership>();
+
+    /// <summary>
     /// Applies the Npgsql configuration every context must share — production, design-time
     /// tooling, and tests alike.
     /// </summary>
@@ -75,7 +85,17 @@ public class ChatDbContext : DbContext, IUnitOfWork
 
         builder.UseNpgsql(
             connectionString,
-            npgsql => npgsql.MigrationsHistoryTable(MigrationsHistoryTableName));
+            npgsql =>
+            {
+                npgsql.MigrationsHistoryTable(MigrationsHistoryTableName);
+
+                // PostgreSQL enum types rather than text plus a CHECK constraint (data-model.md).
+                // The mapping must be declared on the connection as well as on the model — without
+                // it Npgsql cannot read the value back and every query throws at materialisation,
+                // not at startup, which is a confusing place to discover a missing line.
+                npgsql.MapEnum<Domain.Employees.EmployeeStatus>("employee_status");
+                npgsql.MapEnum<Domain.Conversations.MembershipRole>("membership_role");
+            });
 
         return builder;
     }
@@ -127,6 +147,16 @@ public class ChatDbContext : DbContext, IUnitOfWork
         modelBuilder.HasPostgresExtension("unaccent");
         modelBuilder.HasPostgresExtension("pg_trgm");
 
+        // Case-insensitive text, for employee.email. Declared here rather than in the entity
+        // configuration because an extension is a database-level object, not a column property.
+        modelBuilder.HasPostgresExtension("citext");
+
+        // Enum types are declared ONCE, by MapEnum in ConfigureNpgsql. Declaring them here as well
+        // with HasPostgresEnum is the obvious-looking thing to do and is wrong: the provider then
+        // emits two annotations per type under different keys, and it sorts the labels for one of
+        // them — the first attempt produced membership_role as both "member,admin" and
+        // "admin,member" in the same migration. Enum label order is the type's ordinal order in
+        // PostgreSQL, so that is a coin flip over what "ORDER BY role" means.
         modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
 
         ApplySnakeCaseNames(modelBuilder);

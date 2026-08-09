@@ -55,7 +55,7 @@ public sealed class UnitTestBudgetGuardTests
     [Fact]
     public void Fixed_clock_is_deterministic()
     {
-        Domain.Common.IClock clock = ProbeClock.Fixed();
+        global::InternalChat.Domain.Common.IClock clock = ProbeClock.Fixed();
 
         Assert.Equal(clock.UtcNow, clock.UtcNow);
         Assert.Equal(
@@ -79,6 +79,8 @@ public sealed class UnitTestBudgetGuardTests
 
     private sealed class ProbeClock : UnitTestBase
     {
-        public static Domain.Common.IClock Fixed() => FixedClock();
+        // Globally qualified: this project now has its own InternalChat.UnitTests.Domain
+        // namespace for domain test classes, which otherwise shadows InternalChat.Domain here.
+        public static global::InternalChat.Domain.Common.IClock Fixed() => FixedClock();
     }
 }

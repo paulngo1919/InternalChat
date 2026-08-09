@@ -29,6 +29,18 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY src/internalchat-web/ ./
 
+# The SPA's OIDC settings are inlined at build time, so they are build arguments rather than
+# runtime environment. None of them is a secret — a public client has none to hold, which is
+# exactly why the flow uses PKCE (research.md D5). The default points at the Compose stack's
+# published Keycloak port, because the browser resolves this address, not the container network.
+ARG VITE_OIDC_AUTHORITY=http://localhost:8082/realms/internalchat
+ARG VITE_OIDC_CLIENT_ID=internalchat-web
+ARG VITE_API_BASE_URL=/api/v1
+
+ENV VITE_OIDC_AUTHORITY=$VITE_OIDC_AUTHORITY \
+    VITE_OIDC_CLIENT_ID=$VITE_OIDC_CLIENT_ID \
+    VITE_API_BASE_URL=$VITE_API_BASE_URL
+
 RUN npm run lint \
     && npm run build
 

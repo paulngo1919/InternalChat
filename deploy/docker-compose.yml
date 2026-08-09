@@ -141,7 +141,10 @@ services:
       KC_HTTP_ENABLED: 'true'
       KC_HTTP_PORT: '8080'
     volumes:
-      - ./keycloak/import:/opt/keycloak/data/import:ro
+      # T061. Mounted as a single file rather than the directory so the realm under
+      # import is unambiguous: a stray .json left in ./keycloak/import would otherwise
+      # be imported too, and Keycloak reports that as success.
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     ports:
       - '127.0.0.1:${KEYCLOAK_PORT}:8080'
     # The management port (9000) serves /health/ready. The image is distroless,
@@ -382,6 +385,13 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.web
+      # Inlined into the bundle at build time, so these are build args rather than environment.
+      # The authority is the address the BROWSER resolves — the published Keycloak port, not the
+      # container hostname the API uses.
+      args:
+        VITE_OIDC_AUTHORITY: http://localhost:${KEYCLOAK_PORT}/realms/${KEYCLOAK_REALM}
+        VITE_OIDC_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
+        VITE_API_BASE_URL: /api/v1
     expose:
       - '8080'
     networks: [frontend]

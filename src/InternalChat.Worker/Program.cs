@@ -7,6 +7,10 @@
 // consumers live here rather than inside the API so they execute exactly once regardless of
 // how many API instances are running.
 
+using InternalChat.Application;
+using InternalChat.Application.Abstractions;
+using InternalChat.Infrastructure;
+using InternalChat.Worker.Consumers;
 using InternalChat.Worker.Observability;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -17,10 +21,22 @@ builder.Services.AddHttpClient();
 // traced and logged through the same pipeline rather than only reaching stdout.
 builder.Services.AddChatObservability(builder.Configuration, serviceName: "internalchat-worker");
 
+builder.Services.AddApplication();
+builder.Services.AddInfrastructure(builder.Configuration);
+
+// Consumers are registered against the Application-layer port. The host below resolves them all
+// and hands each to the Infrastructure consumer host, which owns acknowledgement, idempotency,
+// bounded retry, and dead-lettering — so a consumer never implements any of those itself.
+// Registered twice on purpose: once against the port, so the queue-consumer service can enumerate
+// which queues to consume, and once as the concrete type, so ConsumerHost can resolve it from the
+// per-message scope and share that scope's transaction.
+builder.Services.AddScoped<DirectorySyncConsumer>();
+builder.Services.AddScoped<IMessageConsumer>(sp => sp.GetRequiredService<DirectorySyncConsumer>());
+
+builder.Services.AddHostedService<InternalChat.Infrastructure.Messaging.QueueConsumerService>();
+
 // Registered in later phases:
-//   builder.Services.AddApplication();
-//   builder.Services.AddInfrastructure(builder.Configuration);
-//   builder.Services.AddHostedService<OutboxDispatcher>();          // T037
+//   builder.Services.AddHostedService<OutboxDispatcher>();          // T037 wiring
 //   builder.Services.AddHostedService<PartitionMaintenanceJob>();   // T089
 //   builder.Services.AddHostedService<RetentionSweepJob>();         // T206
 

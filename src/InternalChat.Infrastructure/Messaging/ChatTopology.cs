@@ -75,6 +75,10 @@ public static class ChatTopology
     /// <summary>Queues from <c>contracts/messaging.md</c>.</summary>
     public static readonly IReadOnlyList<QueueDefinition> Queues =
     [
+        // Prefetch 1, unlike every other queue. Ordering matters here in a way it does not
+        // elsewhere: a deactivation overtaken by a stale attribute update would silently restore
+        // access to an employee who has left, which is the one failure FR-003 is written against.
+        new("directory.sync", "chat.directory.*", PrefetchCount: 1),
         new("notifications.fanout", "chat.message.sent.*", PrefetchCount: 4),
         new("attachments.scan", "chat.attachment.uploaded.*", PrefetchCount: 2),
         new("search.index", "chat.message.*", PrefetchCount: 4),

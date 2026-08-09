@@ -1,3 +1,4 @@
+using InternalChat.Application.Abstractions;
 using System.Collections.Concurrent;
 using System.Text;
 using InternalChat.Infrastructure.Messaging;

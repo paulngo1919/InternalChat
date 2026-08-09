@@ -32,6 +32,9 @@
   <ItemGroup Label="Caching and real-time">
     <PackageVersion Include="StackExchange.Redis" Version="3.1.0" />
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.0.10" />
+    <!-- Test-side only: integration tests open a real hub connection, because the behaviour under
+         test (a connection outliving its token) cannot be observed without one. -->
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.10" />
   </ItemGroup>
 
   <ItemGroup Label="Messaging — official client, NOT MassTransit (research.md D3)">
@@ -74,6 +77,12 @@
     <PackageVersion Include="Testcontainers.Minio" Version="4.13.0" />
     <PackageVersion Include="Testcontainers.Keycloak" Version="4.13.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.10" />
+
+    <!-- Reads contracts/openapi.yaml so the contract suite compares endpoints against the
+         committed document rather than against a second copy of it in C#. MIT licensed
+         (Principle VIII); recorded in research.md's dependency register. Test-side only — no
+         production project references it. -->
+    <PackageVersion Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
 
 </Project>

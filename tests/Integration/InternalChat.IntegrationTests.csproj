@@ -12,12 +12,19 @@
     <ProjectReference Include="..\..\src\InternalChat.Worker\InternalChat.Worker.csproj" />
   </ItemGroup>
 
+  <!-- Shared with the contract tests. Locates repository fixtures (the OpenAPI document, the
+       Keycloak realm) without a hand-counted relative path from the bin directory. -->
+  <ItemGroup>
+    <Compile Include="..\Shared\RepositoryPaths.cs" Link="Shared\RepositoryPaths.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
     <PackageReference Include="Testcontainers" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers.Redis" />

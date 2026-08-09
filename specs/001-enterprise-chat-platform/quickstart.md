@@ -33,7 +33,7 @@ immediately rather than configuring your way to a working system.
 
 | Service | URL | Credentials |
 | --- | --- | --- |
-| Web app | <http://localhost:8080> | `alice` / `alice` (see `deploy/keycloak/README`) |
+| Web app | <http://localhost:8080> | `an.nguyen` / `an.nguyen` (full roster in `deploy/keycloak/README.md`) |
 | API + OpenAPI | <http://localhost:8081/swagger> | Bearer token from Keycloak |
 | Keycloak | <http://localhost:8082> | from `.env` |
 | RabbitMQ management | <http://localhost:15672> | from `.env` |
@@ -56,23 +56,23 @@ Each maps to a user story and its success criteria. Run these before claiming a 
 
 ### V1 — Sign-in and revocation (US1 · SC-018)
 
-1. Sign in as `alice`. You reach the conversation list without creating a chat password.
+1. Sign in as `an.nguyen`. You reach the conversation list without creating a chat password.
 2. Request a conversation you are not a member of via the API. Expect `403` with a Problem Details
    body, indistinguishable from `404`.
-3. Deactivate `alice` in Keycloak while her browser session is open.
-4. Within 5 minutes her open session stops working — including the already-established WebSocket.
+3. Deactivate `an.nguyen` in Keycloak while that browser session is open.
+4. Within 5 minutes the open session stops working — including the already-established WebSocket.
 
 > Step 4 is the one that fails in most implementations. An open connection that outlives its token
 > is the default behaviour, not the exception.
 
 ### V2 — Exactly-once messaging (US2 · SC-006, SC-022)
 
-1. Sign in as `alice` and `bob` in two browsers. Send from `alice`; it appears for `bob` with no
-   refresh, within 500 ms.
+1. Sign in as `an.nguyen` and `binh.tran` in two browsers. Send from `an.nguyen`; it appears for
+   `binh.tran` with no refresh, within 500 ms.
 2. Send the same `clientMessageKey` twice. Expect `201` then `200`, and exactly one message in the
    conversation.
-3. Kill `bob`'s network, send three messages, restore it. All three appear once, in order.
-4. Set `bob`'s device clock forward one hour and send. Ordering is unaffected — `seq` is the
+3. Kill `binh.tran`'s network, send three messages, restore it. All three appear once, in order.
+4. Set `binh.tran`'s device clock forward one hour and send. Ordering is unaffected — `seq` is the
    authority, not the clock.
 
 ```bash
@@ -81,20 +81,22 @@ dotnet test tests/Integration --filter Category=Messaging
 
 ### V3 — Groups and membership revocation (US3)
 
-1. Create a group with `alice`, `bob`, `carol`. Post messages.
-2. Add `dave`. He sees history from his join point only, and the rule is shown to him.
-3. Remove `carol` while her window is open. She stops receiving immediately, without refreshing,
-   and loses access to the group's attachments.
+1. Create a group with `an.nguyen`, `binh.tran`, `chi.le`. Post messages.
+2. Add `dung.pham`. They see history from their join point only, and the rule is shown to them.
+3. Remove `chi.le` while their window is open. They stop receiving immediately, without refreshing,
+   and lose access to the group's attachments.
 4. Post to the seeded 500-member group; delivery to online members stays inside the budget.
 
 ### V4 — Notifications and unread state (US4 · SC-008)
 
-1. Grant notification permission as `bob`, background the tab, have `alice` DM him. A notification
-   arrives within 5 seconds and opens on the triggering message.
-2. Post 20 ordinary messages to a group `bob` is in — no notification. Mention him — notification.
-3. Read on one device; the unread badge clears on his other device.
+1. Grant notification permission as `binh.tran`, background the tab, have `an.nguyen` send a DM.
+   A notification arrives within 5 seconds and opens on the triggering message.
+2. Post 20 ordinary messages to a group `binh.tran` is in — no notification. Add a mention —
+   notification.
+3. Read on one device; the unread badge clears on the other device.
 4. Set a DND window and post inside it. No interruption, but unread state still updates.
-5. Deny notification permission. The UI states plainly that `bob` will not be reached (FR-040).
+5. Deny notification permission. The UI states plainly that `binh.tran` will not be reached
+   (FR-040).
 
 ### V5 — Attachments and access control (US5, US7 · SC-017)
 

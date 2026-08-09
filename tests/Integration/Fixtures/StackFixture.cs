@@ -60,10 +60,36 @@ public sealed class StackFixture : IAsyncLifetime
         .WithCleanUp(true)
         .Build();
 
+    // Imports the SAME realm the deployment imports (T061), not a test-only realm. A realm
+    // invented here would let the authentication path pass against a configuration nobody runs —
+    // wrong audience mapper, wrong token lifetime, wrong subject format, all invisible until
+    // production. The wait strategy targets the realm's discovery document rather than the root
+    // page for the same reason: the root answers before the import has finished.
     private readonly KeycloakContainer _keycloak = new KeycloakBuilder(KeycloakImage)
         .WithCleanUp(true)
-        .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPath("/").ForPort(8080)))
+        .WithResourceMapping(
+            new FileInfo(TestSupport.RepositoryPaths.KeycloakRealmExport),
+            "/opt/keycloak/data/import/")
+        .WithCommand("--import-realm")
+        .WithWaitStrategy(
+            Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(
+                r => r.ForPath($"/realms/{Realm}/.well-known/openid-configuration").ForPort(8080)))
         .Build();
+
+    /// <summary>The realm imported from <c>deploy/keycloak/realm-export.json</c>.</summary>
+    public const string Realm = "internalchat";
+
+    /// <summary>
+    /// The direct-access-grant client the realm carries for automated tests.
+    /// </summary>
+    /// <remarks>
+    /// Tests need a token without driving a browser. This is why it exists, and why
+    /// <c>deploy/keycloak/README.md</c> records that a production realm must not import it.
+    /// </remarks>
+    public const string TestClientId = "internalchat-test";
+
+    /// <summary>The audience the API validates — the SPA client id, per the realm's audience mapper.</summary>
+    public const string Audience = "internalchat-web";
 
     /// <summary>PostgreSQL connection string, schema already migrated.</summary>
     public string PostgresConnectionString => _postgres.GetConnectionString();
@@ -85,6 +111,163 @@ public sealed class StackFixture : IAsyncLifetime
 
     /// <summary>Keycloak base address.</summary>
     public Uri KeycloakBaseAddress => new(_keycloak.GetBaseAddress());
+
+    /// <summary>
+    /// The OIDC authority the API must be configured with, and the exact value tokens carry as
+    /// <c>iss</c>.
+    /// </summary>
+    /// <remarks>
+    /// Keycloak derives the issuer from the request it received, so this is the container's mapped
+    /// address — a different spelling of the same host (<c>127.0.0.1</c> for <c>localhost</c>)
+    /// produces a token the API rejects for issuer mismatch, which reads as a signature problem
+    /// and is not one.
+    /// </remarks>
+    public string RealmAuthority => $"{KeycloakBaseAddress.ToString().TrimEnd('/')}/realms/{Realm}";
+
+    /// <summary>
+    /// Obtains a real access token for a realm user, via the direct access grant.
+    /// </summary>
+    /// <remarks>
+    /// Signed by the real Keycloak with the real realm settings, so a test exercises the same
+    /// validation production does: issuer, audience, signature, and the 300-second lifetime that
+    /// research.md D5 makes load-bearing. Hand-minting a token with a symmetric test key would
+    /// verify the test's own assumptions instead.
+    /// </remarks>
+    /// <param name="username">Realm username. Passwords equal usernames in the development realm.</param>
+    public async Task<string> IssueAccessTokenAsync(
+        string username,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(username);
+
+        using HttpClient client = new();
+        using FormUrlEncodedContent form = new(
+        [
+            new KeyValuePair<string, string>("grant_type", "password"),
+            new KeyValuePair<string, string>("client_id", TestClientId),
+            new KeyValuePair<string, string>("username", username),
+            new KeyValuePair<string, string>("password", username),
+            new KeyValuePair<string, string>("scope", "openid"),
+        ]);
+
+        using HttpResponseMessage response = await client
+            .PostAsync(new Uri($"{RealmAuthority}/protocol/openid-connect/token"), form, cancellationToken)
+            .ConfigureAwait(false);
+
+        string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Keycloak refused a token for '{username}' ({(int)response.StatusCode}): {body}. "
+                + "The realm export and the roster in tools/Seeder/DevelopmentSeeder must agree.");
+        }
+
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(body);
+        return document.RootElement.GetProperty("access_token").GetString()
+            ?? throw new InvalidOperationException("Keycloak returned a token response with no access_token.");
+    }
+
+    /// <summary>
+    /// Issues a token that is already expired by the time it is returned.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The realm's access tokens live 300 seconds, and a test cannot wait that out. Rather than mint
+    /// a token by hand — which would test the test's idea of a token, not Keycloak's — the realm's
+    /// lifespan is briefly narrowed through the admin API, a real token is issued, and the setting
+    /// is restored. What comes back is genuinely signed, genuinely audience-mapped, and genuinely
+    /// stale.
+    /// </para>
+    /// <para>
+    /// The wait afterwards must exceed the JWT handler's permitted clock skew, which the API sets to
+    /// zero (a five-minute default would silently double the effective token life and break the
+    /// revocation budget in FR-003). Two seconds is therefore ample.
+    /// </para>
+    /// </remarks>
+    public async Task<string> IssueExpiredAccessTokenAsync(
+        string username,
+        CancellationToken cancellationToken = default)
+    {
+        const int OriginalLifespanSeconds = 300;
+
+        await SetAccessTokenLifespanAsync(1, cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            string token = await IssueAccessTokenAsync(username, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+            return token;
+        }
+        finally
+        {
+            // Restored even on failure. Leaving the realm at a one-second lifespan would make every
+            // later test in the collection fail with an expiry error and no hint of why.
+            await SetAccessTokenLifespanAsync(OriginalLifespanSeconds, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task SetAccessTokenLifespanAsync(int seconds, CancellationToken cancellationToken)
+    {
+        using HttpClient client = new();
+
+        string adminToken = await GetAdminTokenAsync(client, cancellationToken).ConfigureAwait(false);
+
+        using HttpRequestMessage request = new(
+            HttpMethod.Put,
+            new Uri($"{KeycloakBaseAddress.ToString().TrimEnd('/')}/admin/realms/{Realm}"));
+
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", adminToken);
+        request.Content = new StringContent(
+            $$"""{"realm":"{{Realm}}","accessTokenLifespan":{{seconds}}}""",
+            System.Text.Encoding.UTF8,
+            "application/json");
+
+        using HttpResponseMessage response = await client
+            .SendAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException(
+                $"Could not set accessTokenLifespan on realm '{Realm}' ({(int)response.StatusCode}): {body}");
+        }
+    }
+
+    private async Task<string> GetAdminTokenAsync(HttpClient client, CancellationToken cancellationToken)
+    {
+        // Testcontainers' Keycloak module bootstraps this administrator. Only the master realm is
+        // reachable with it, which is the point — no test can accidentally authenticate as an
+        // application user with administrative rights.
+        using FormUrlEncodedContent form = new(
+        [
+            new KeyValuePair<string, string>("grant_type", "password"),
+            new KeyValuePair<string, string>("client_id", "admin-cli"),
+            new KeyValuePair<string, string>("username", "admin"),
+            new KeyValuePair<string, string>("password", "admin"),
+        ]);
+
+        using HttpResponseMessage response = await client
+            .PostAsync(
+                new Uri($"{KeycloakBaseAddress.ToString().TrimEnd('/')}/realms/master/protocol/openid-connect/token"),
+                form,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Could not obtain a Keycloak administrator token ({(int)response.StatusCode}): {body}");
+        }
+
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(body);
+        return document.RootElement.GetProperty("access_token").GetString()
+            ?? throw new InvalidOperationException("Keycloak returned an admin token response with no access_token.");
+    }
 
     /// <inheritdoc />
     public async Task InitializeAsync()

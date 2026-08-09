@@ -1,108 +1,123 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+
+import { createApiClient, type CurrentEmployee, type Session } from './lib/api/client'
+import { readApiBaseUrl } from './lib/auth/config'
+import { useAuth } from './lib/auth/authContext'
 import './App.css'
 
-function App() {
-  const [count, setCount] = useState(0)
+/**
+ * US1's visible surface: who you are, and which devices are signed in as you (FR-005).
+ *
+ * Conversations arrive with US2. What is here is what US1 actually delivers, and it is what
+ * quickstart V1 walks through — reaching a signed-in view without ever creating a chat password.
+ */
+export default function App() {
+  const { getAccessToken, signOut } = useAuth()
+
+  const api = useMemo(
+    () => createApiClient(readApiBaseUrl(import.meta.env), getAccessToken),
+    [getAccessToken],
+  )
+
+  const [me, setMe] = useState<CurrentEmployee | null>(null)
+  const [sessions, setSessions] = useState<Session[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  const loadSessions = useCallback(async () => {
+    setSessions(await api.getSessions())
+  }, [api])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load(): Promise<void> {
+      try {
+        const profile = await api.getMe()
+
+        if (!cancelled) {
+          setMe(profile)
+          await loadSessions()
+        }
+      } catch (cause) {
+        if (!cancelled) {
+          setError(cause instanceof Error ? cause.message : 'Could not load your profile.')
+        }
+      }
+    }
+
+    void load()
+
+    return () => {
+      cancelled = true
+    }
+  }, [api, loadSessions])
+
+  const revoke = useCallback(
+    async (sessionId: string) => {
+      await api.revokeSession(sessionId)
+      await loadSessions()
+    },
+    [api, loadSessions],
+  )
+
+  if (error) {
+    return (
+      <main>
+        <p role="alert">{error}</p>
+      </main>
+    )
+  }
+
+  if (!me) {
+    return (
+      <main>
+        <p>Loading your profile…</p>
+      </main>
+    )
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => {
-            setCount((current) => current + 1)
-          }}
-        >
-          Count is {count}
+    <main>
+      <header>
+        <h1 data-testid="display-name">{me.displayName}</h1>
+        <p>{me.email}</p>
+        <button type="button" onClick={signOut}>
+          Sign out
         </button>
+      </header>
+
+      {/*
+        FR-040: say plainly when this browser cannot be reached, rather than letting an employee
+        assume a message will find them. Push subscriptions arrive with US4; until then the honest
+        answer is that nobody is reachable, and that is what this shows.
+      */}
+      {!me.canReceiveNotifications && (
+        <p role="status" data-testid="notification-warning">
+          Notifications are off for this browser, so you will not be alerted to new messages while
+          this tab is in the background.
+        </p>
+      )}
+
+      <section aria-labelledby="sessions-heading">
+        <h2 id="sessions-heading">Your signed-in devices</h2>
+
+        <ul>
+          {sessions.map((session) => (
+            <li key={session.id} data-testid="session">
+              <span>{session.userAgent || 'Unknown device'}</span>
+              {session.isCurrent && <span> (this device)</span>}
+              <button
+                type="button"
+                onClick={() => {
+                  void revoke(session.id)
+                }}
+              >
+                Sign this device out
+              </button>
+            </li>
+          ))}
+        </ul>
       </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg className="button-icon" role="presentation" aria-hidden="true">
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg className="button-icon" role="presentation" aria-hidden="true">
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg className="button-icon" role="presentation" aria-hidden="true">
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg className="button-icon" role="presentation" aria-hidden="true">
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    </main>
   )
 }
-
-export default App

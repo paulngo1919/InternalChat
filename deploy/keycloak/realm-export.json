@@ -1,0 +1,628 @@
+{
+  "realm": "internalchat",
+  "displayName": "InternalChat",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "verifyEmail": false,
+  "accessTokenLifespan": 300,
+  "accessTokenLifespanForImplicitFlow": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "offlineSessionIdleTimeout": 2592000,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "failureFactor": 10,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "roles": {
+    "realm": [
+      {
+        "name": "employee",
+        "description": "Every active employee. Grants sign-in only — it says nothing about WHICH conversation, which is exactly why authorization is resource-scoped membership rather than this role (Principle IV)."
+      },
+      {
+        "name": "chat-admin",
+        "description": "Platform administration: retention policy and exports. Still not sufficient to read a conversation the holder is not a member of."
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "internalchat-web",
+      "name": "InternalChat web (SPA)",
+      "description": "React SPA. Public client, authorization code with PKCE (S256) only — a public client cannot hold a secret, so PKCE is what stops an intercepted authorization code being redeemed by someone else.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "bearerOnly": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": false,
+      "fullScopeAllowed": true,
+      "rootUrl": "http://localhost:8080",
+      "baseUrl": "/",
+      "redirectUris": [
+        "http://localhost:8080/*",
+        "https://localhost:8443/*"
+      ],
+      "webOrigins": [
+        "http://localhost:8080",
+        "https://localhost:8443"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8080/*##https://localhost:8443/*",
+        "backchannel.logout.url": "http://api:8080/api/v1/auth/backchannel-logout",
+        "backchannel.logout.session.required": "true",
+        "backchannel.logout.revoke.offline.tokens": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "internalchat-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "internalchat-web",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "display-name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "displayName",
+            "claim.name": "display_name",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "internalchat-test",
+      "name": "InternalChat automated tests",
+      "description": "Direct access grants, for integration and end-to-end tests only. Present in the DEVELOPMENT realm export alone — a production realm must not import this client, because a password grant bypasses the browser flow and therefore PKCE entirely.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "bearerOnly": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [],
+      "webOrigins": [],
+      "attributes": {},
+      "protocolMappers": [
+        {
+          "name": "internalchat-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "internalchat-web",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "display-name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "displayName",
+            "claim.name": "display_name",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "dev-an.nguyen",
+      "username": "an.nguyen",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "an.nguyen@internalchat.local",
+      "firstName": "Thị Vân An",
+      "lastName": "Nguyễn",
+      "attributes": {
+        "displayName": [
+          "Nguyễn Thị Vân An"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "an.nguyen",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee",
+        "chat-admin"
+      ]
+    },
+    {
+      "id": "dev-binh.tran",
+      "username": "binh.tran",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "binh.tran@internalchat.local",
+      "firstName": "Quốc Bình",
+      "lastName": "Trần",
+      "attributes": {
+        "displayName": [
+          "Trần Quốc Bình"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "binh.tran",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-chi.le",
+      "username": "chi.le",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "chi.le@internalchat.local",
+      "firstName": "Bảo Chi",
+      "lastName": "Lê",
+      "attributes": {
+        "displayName": [
+          "Lê Bảo Chi"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "chi.le",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-dung.pham",
+      "username": "dung.pham",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "dung.pham@internalchat.local",
+      "firstName": "Tiến Dũng",
+      "lastName": "Phạm",
+      "attributes": {
+        "displayName": [
+          "Phạm Tiến Dũng"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dung.pham",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-giang.hoang",
+      "username": "giang.hoang",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "giang.hoang@internalchat.local",
+      "firstName": "Thu Giang",
+      "lastName": "Hoàng",
+      "attributes": {
+        "displayName": [
+          "Hoàng Thu Giang"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "giang.hoang",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-hai.vo",
+      "username": "hai.vo",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "hai.vo@internalchat.local",
+      "firstName": "Minh Hải",
+      "lastName": "Võ",
+      "attributes": {
+        "displayName": [
+          "Võ Minh Hải"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "hai.vo",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-khanh.dang",
+      "username": "khanh.dang",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "khanh.dang@internalchat.local",
+      "firstName": "Gia Khánh",
+      "lastName": "Đặng",
+      "attributes": {
+        "displayName": [
+          "Đặng Gia Khánh"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "khanh.dang",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-lan.bui",
+      "username": "lan.bui",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "lan.bui@internalchat.local",
+      "firstName": "Ngọc Lan",
+      "lastName": "Bùi",
+      "attributes": {
+        "displayName": [
+          "Bùi Ngọc Lan"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "lan.bui",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-minh.do",
+      "username": "minh.do",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "minh.do@internalchat.local",
+      "firstName": "Nhật Minh",
+      "lastName": "Đỗ",
+      "attributes": {
+        "displayName": [
+          "Đỗ Nhật Minh"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "minh.do",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-nga.ngo",
+      "username": "nga.ngo",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "nga.ngo@internalchat.local",
+      "firstName": "Thúy Nga",
+      "lastName": "Ngô",
+      "attributes": {
+        "displayName": [
+          "Ngô Thúy Nga"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "nga.ngo",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-phuc.duong",
+      "username": "phuc.duong",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "phuc.duong@internalchat.local",
+      "firstName": "Hồng Phúc",
+      "lastName": "Dương",
+      "attributes": {
+        "displayName": [
+          "Dương Hồng Phúc"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "phuc.duong",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-quyen.ly",
+      "username": "quyen.ly",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "quyen.ly@internalchat.local",
+      "firstName": "Thanh Quyên",
+      "lastName": "Lý",
+      "attributes": {
+        "displayName": [
+          "Lý Thanh Quyên"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "quyen.ly",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-son.truong",
+      "username": "son.truong",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "son.truong@internalchat.local",
+      "firstName": "Hoài Sơn",
+      "lastName": "Trương",
+      "attributes": {
+        "displayName": [
+          "Trương Hoài Sơn"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "son.truong",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-thao.dinh",
+      "username": "thao.dinh",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "thao.dinh@internalchat.local",
+      "firstName": "Phương Thảo",
+      "lastName": "Đinh",
+      "attributes": {
+        "displayName": [
+          "Đinh Phương Thảo"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "thao.dinh",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-tuan.mai",
+      "username": "tuan.mai",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "tuan.mai@internalchat.local",
+      "firstName": "Anh Tuấn",
+      "lastName": "Mai",
+      "attributes": {
+        "displayName": [
+          "Mai Anh Tuấn"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "tuan.mai",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-uyen.cao",
+      "username": "uyen.cao",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "uyen.cao@internalchat.local",
+      "firstName": "Diệu Uyên",
+      "lastName": "Cao",
+      "attributes": {
+        "displayName": [
+          "Cao Diệu Uyên"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "uyen.cao",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-viet.ha",
+      "username": "viet.ha",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "viet.ha@internalchat.local",
+      "firstName": "Đức Việt",
+      "lastName": "Hà",
+      "attributes": {
+        "displayName": [
+          "Hà Đức Việt"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "viet.ha",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-xuan.luong",
+      "username": "xuan.luong",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "xuan.luong@internalchat.local",
+      "firstName": "Thị Xuân",
+      "lastName": "Lương",
+      "attributes": {
+        "displayName": [
+          "Lương Thị Xuân"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "xuan.luong",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-yen.trinh",
+      "username": "yen.trinh",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "yen.trinh@internalchat.local",
+      "firstName": "Hải Yến",
+      "lastName": "Trịnh",
+      "attributes": {
+        "displayName": [
+          "Trịnh Hải Yến"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "yen.trinh",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    },
+    {
+      "id": "dev-duc.nguyen",
+      "username": "duc.nguyen",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "duc.nguyen@internalchat.local",
+      "firstName": "Trung Đức",
+      "lastName": "Nguyễn",
+      "attributes": {
+        "displayName": [
+          "Nguyễn Trung Đức"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "duc.nguyen",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "employee"
+      ]
+    }
+  ]
+}

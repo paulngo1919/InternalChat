@@ -45,6 +45,16 @@ public sealed class AuthorizationCoverageTests : IClassFixture<WebApplicationFac
     {
         ["/health/live"] = "Liveness probe. A probe that needs a token cannot report an outage.",
         ["/health/ready"] = "Readiness probe. Same reasoning as liveness.",
+
+        // T064. Keycloak posts here server-to-server when a session ends, with no user context, so
+        // there is no bearer token it could present. The logout token in the body IS the
+        // credential, and LogoutTokenValidator checks it in full — signature, issuer, audience,
+        // lifetime, the back-channel logout `events` claim, and the absence of `nonce` — before
+        // anything is revoked. The last two are what stop an ordinary access token being replayed
+        // here to sign its bearer out. Rate limited per IP on the authentication policy.
+        ["/api/v1/auth/backchannel-logout"] =
+            "Keycloak back-channel logout (research.md D5). Called server-to-server with no user "
+            + "context; the signed logout token is the credential and is fully validated.",
     };
 
     private readonly WebApplicationFactory<Program> _factory;

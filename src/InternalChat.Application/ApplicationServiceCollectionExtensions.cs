@@ -25,6 +25,23 @@ public static class ApplicationServiceCollectionExtensions
         services.TryAddSingleton<IClock, SystemClock>();
         services.TryAddScoped<IUseCaseDispatcher, UseCaseDispatcher>();
 
+        // The one authorization decision this platform has (Principle IV). Scoped because the
+        // membership reader behind it reads through the request's unit of work on a cache miss.
+        services.TryAddScoped<
+            Authorization.IConversationMembershipEvaluator,
+            Authorization.ConversationMembershipEvaluator>();
+
+        // Sign-in, sign-out, and access denials — the security events that happen outside a use
+        // case and so never reach the pipeline behavior below (FR-006, T072).
+        services.TryAddScoped<ISecurityAuditor, SecurityAuditor>();
+
+        // Use cases. Registered against IUseCase<,> so the dispatcher can find them and wrap them
+        // in the behavior pipeline — a handler resolved directly would skip validation, the
+        // transaction, and the audit record.
+        services.TryAddScoped<
+            IUseCase<Directory.SyncEmployee, Directory.SyncEmployeeResult>,
+            Directory.SyncEmployeeHandler>();
+
         // ORDER IS LOAD-BEARING — outermost first. See UseCaseDispatcher for why each position
         // matters. Reordering these changes transactional and audit semantics, not just style.
         services.TryAddEnumerable(

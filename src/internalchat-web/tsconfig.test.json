@@ -1,0 +1,17 @@
+{
+  /* The Vitest program. Separate from the app program because it needs Vitest's globals and the
+     jsdom-flavoured DOM types, and because test files must not end up in the shipped bundle's
+     type graph — a test importing something the app does not would otherwise typecheck as if the
+     app imported it too.
+
+     It exists mainly so ESLint's type-aware rules have a program for tests/. Without it, every
+     test file fails linting with "not found by the project service", which reads as a
+     configuration error and is really a missing program. */
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"],
+    "noEmit": true
+  },
+  "include": ["tests", "src"]
+}

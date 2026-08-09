@@ -1,3 +1,4 @@
+using InternalChat.Application.Abstractions;
 using System.Diagnostics;
 using System.Text;
 using InternalChat.Application.Telemetry;

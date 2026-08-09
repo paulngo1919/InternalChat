@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using InternalChat.Application.Abstractions;
 using InternalChat.Application.Telemetry;
 using InternalChat.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -176,6 +177,19 @@ public sealed partial class ConsumerHost : IAsyncDisposable
         using IServiceScope scope = _scopeFactory.CreateScope();
         ChatDbContext context = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
 
+        // The handler must come from THIS scope, not be the instance handed to StartAsync. A
+        // consumer that depends on scoped services — a use case dispatcher, a repository — would
+        // otherwise hold a different ChatDbContext from the one this transaction belongs to, and
+        // its writes would commit separately from the deduplication record. That is precisely the
+        // split Principle VI's "same transaction" rule exists to prevent, and it fails silently:
+        // everything works until a handler throws, at which point the dedup rolls back and the
+        // handler's work does not.
+        //
+        // Falls back to the supplied instance when the concrete type is not registered, which is
+        // how tests pass a self-contained consumer without a container.
+        IMessageConsumer scopedConsumer =
+            scope.ServiceProvider.GetService(consumer.GetType()) as IMessageConsumer ?? consumer;
+
         await using var transaction = await context.Database.BeginTransactionAsync().ConfigureAwait(false);
 
         // ON CONFLICT DO NOTHING rather than "check then insert". The check-then-insert version
@@ -194,7 +208,7 @@ public sealed partial class ConsumerHost : IAsyncDisposable
             return false;
         }
 
-        await consumer.HandleAsync(envelope).ConfigureAwait(false);
+        await scopedConsumer.HandleAsync(envelope).ConfigureAwait(false);
         await context.SaveChangesAsync().ConfigureAwait(false);
 
         // Handler work and deduplication record commit together. A handler that throws takes the

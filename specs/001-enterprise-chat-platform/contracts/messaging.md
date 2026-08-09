@@ -20,6 +20,7 @@ dead-letter). DLQ depth is alerted on — silent message loss is a Sev-1 defect.
 
 | Queue | Binding | Consumer | Concurrency |
 | --- | --- | --- | --- |
+| `directory.sync` | `chat.directory.*` | Worker | 1 |
 | `notifications.fanout` | `chat.message.sent.*` | Worker | 4 |
 | `attachments.scan` | `chat.attachment.uploaded.*` | Worker | 2 |
 | `search.index` | `chat.message.*` | Worker | 4 |
@@ -49,6 +50,37 @@ Every message carries the same envelope. Field names are stable across all event
 - `type` carries the version. Consumers MUST ignore unknown fields and MUST NOT fail on them.
 
 ## Events
+
+### `chat.directory.employee.changed.v1`
+
+Routing key: `chat.directory.employee.changed`
+
+```json
+{
+  "externalSubject": "dev-an.nguyen",
+  "change": "upserted|deactivated|reactivated",
+  "displayName": "Nguyễn Thị Vân An",
+  "email": "an.nguyen@internalchat.local",
+  "avatarUrl": null,
+  "occurredAt": "2026-08-09T09:14:22.117Z"
+}
+```
+
+The corporate directory is authoritative for employee lifecycle (FR-001); this platform only
+projects it. Consumed by `directory.sync`, which upserts the `employee` row and, on
+`deactivated`, writes the Redis revocation set — the path with the tightest deadline in the system
+(FR-003, five minutes).
+
+`externalSubject` is the key, not an internal id. The producer is outside this platform and has no
+way to know one; it is also the `sub` claim every token carries, which is what makes the join
+possible at all.
+
+**`displayName` and `email` are ignored for `deactivated` and `reactivated`.** A rename and a
+revocation must not be the same operation when only one of them has a deadline attached — the
+domain enforces this too (`Employee.UpdateDirectoryAttributes` never touches `Status`).
+
+Concurrency is **1**, deliberately. Ordering matters here in a way it does not elsewhere: a
+deactivation overtaken by a stale upsert would silently restore access.
 
 ### `chat.message.sent.v1`
 

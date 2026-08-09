@@ -7,8 +7,14 @@
 // policy. tests/Architecture/AuthorizationCoverageTests.cs fails the build on any omission,
 // which is what makes deny-by-default a gate rather than a habit.
 
+using InternalChat.Api.Authorization;
+using InternalChat.Api.Endpoints;
+using InternalChat.Api.Hubs;
 using InternalChat.Api.Observability;
 using InternalChat.Api.RateLimiting;
+using InternalChat.Application;
+using InternalChat.Infrastructure;
+using Microsoft.AspNetCore.SignalR;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,12 +26,40 @@ builder.Services.AddExceptionHandler<InternalChat.Api.Middleware.ProblemDetailsH
 builder.Services.AddChatRateLimiting();
 builder.Services.AddChatObservability(builder.Configuration, serviceName: "internalchat-api");
 
-// Registered in later phases:
-//   builder.Services.AddApplication();                              // T024
-//   builder.Services.AddInfrastructure(builder.Configuration);      // T025, T032, T035
-//   builder.Services.AddChatAuthentication(builder.Configuration);  // T062
-//   builder.Services.AddChatAuthorization();                        // T066, T067
-//   builder.Services.AddSignalR().AddStackExchangeRedis(...);       // T097
+builder.Services.AddApplication();
+builder.Services.AddInfrastructure(builder.Configuration);
+
+builder.Services.AddChatAuthentication(builder.Configuration);
+builder.Services.AddChatAuthorization();
+
+// The identity of the current request, resolved once by the access gate and read by endpoints.
+builder.Services.AddScoped<CurrentEmployee>();
+builder.Services.AddScoped<AccessGateMiddleware>();
+builder.Services.AddSingleton<LogoutTokenValidator>();
+
+// Open hub connections and the timer that re-checks them. Singletons: the registry holds one
+// process's sockets, and only the process holding a socket can close it (FR-003, SC-018).
+builder.Services.AddSingleton<HubConnectionRegistry>();
+builder.Services.AddSingleton<HubAuthorizationFilter>();
+builder.Services.AddHostedService<RevocationSweepService>();
+
+builder.Services
+    .AddSignalR(options => options.AddFilter<HubAuthorizationFilter>())
+
+    // The options callback runs when RedisOptions is first materialised, not now, so the
+    // connection string is read after every configuration source is in place. Reading it here
+    // eagerly would bake in whatever appsettings.json says and ignore anything supplied later.
+    .AddStackExchangeRedis(options =>
+    {
+        string connectionString = builder.Configuration.GetConnectionString("Redis")
+            ?? throw new InvalidOperationException(
+                "ConnectionStrings:Redis is not configured. It backs the SignalR backplane; "
+                + "without it, delivery would work only for clients that happen to be connected "
+                + "to the same replica as the sender.");
+
+        options.Configuration = StackExchange.Redis.ConfigurationOptions.Parse(connectionString);
+        options.Configuration.ChannelPrefix = StackExchange.Redis.RedisChannel.Literal("signalr");
+    });
 
 var app = builder.Build();
 
@@ -37,10 +71,31 @@ app.UseExceptionHandler();
 // endpoints so the limit is applied prior to any work being done.
 app.UseRateLimiter();
 
+app.UseAuthentication();
+
+// Between authentication and authorization, deliberately. It needs a populated principal, and
+// every endpoint policy must run after the token has been checked against the revocation set —
+// otherwise a revoked employee would still pass an endpoint's own authorization.
+app.UseMiddleware<AccessGateMiddleware>();
+
+app.UseAuthorization();
+
 // Liveness and readiness probes are required by the constitution's container rules.
 // They are deliberately anonymous — a probe that needs a token cannot report an outage.
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" })).AllowAnonymous();
 app.MapGet("/health/ready", () => Results.Ok(new { status = "ready" })).AllowAnonymous();
+
+// Everything the OpenAPI document describes sits under the versioned prefix its `servers` entry
+// declares. Mapping the group in one place means a new endpoint file cannot land outside it.
+RouteGroupBuilder api = app.MapGroup("/api/v1");
+api.MapAuthEndpoints();
+api.MapMeEndpoints();
+api.MapDirectoryEndpoints();
+
+// [Authorize] on the hub covers the connect. Re-validation on every invocation is
+// HubAuthorizationFilter, and closing an idle connection whose access has ended is
+// RevocationSweepService — see contracts/signalr-hub.md and FR-003.
+app.MapHub<ChatHub>(ChatHub.Path);
 
 await app.RunAsync().ConfigureAwait(false);
 

@@ -1,4 +1,4 @@
-namespace InternalChat.Infrastructure.Messaging;
+namespace InternalChat.Application.Abstractions;
 
 /// <summary>A message delivered from a queue.</summary>
 /// <param name="MessageId">
@@ -22,12 +22,20 @@ public sealed record MessageEnvelope(
 /// <remarks>
 /// <para>
 /// Implementations do their work and throw on failure. They do not acknowledge, retry, or
-/// deduplicate — <see cref="ConsumerHost"/> owns all three, so every consumer gets identical
-/// semantics rather than each reimplementing them slightly differently.
+/// deduplicate — the consumer host owns all three, so every consumer gets identical semantics
+/// rather than each reimplementing them slightly differently.
 /// </para>
 /// <para>
 /// Handlers run inside a transaction that also contains the deduplication record, so throwing
 /// rolls back both: the message is genuinely unprocessed and will be retried.
+/// </para>
+/// <para>
+/// <b>Lives in Application, not Infrastructure.</b> It is an inbound port — the shape the
+/// application offers to whatever delivers messages — and the Worker implements it. Were it an
+/// Infrastructure type, every consumer in <c>InternalChat.Worker</c> would be naming Infrastructure
+/// outside its composition root, which Principle I forbids and
+/// <c>tests/Architecture/CompositionRootTests.cs</c> fails the build over. The broker stays behind
+/// the boundary; only the envelope crosses it, and it carries no RabbitMQ type.
 /// </para>
 /// </remarks>
 public interface IMessageConsumer

@@ -11,12 +11,19 @@
     <ProjectReference Include="..\..\src\InternalChat.Api\InternalChat.Api.csproj" />
   </ItemGroup>
 
+  <!-- Shared with the integration tests. Locates contracts/openapi.yaml without a hand-counted
+       relative path from the bin directory. -->
+  <ItemGroup>
+    <Compile Include="..\Shared\RepositoryPaths.cs" Link="Shared\RepositoryPaths.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="YamlDotNet" />
   </ItemGroup>
 
   <ItemGroup>

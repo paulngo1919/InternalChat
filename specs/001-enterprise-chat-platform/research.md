@@ -407,6 +407,7 @@ Re-verify each at pin time.
 | nginx | BSD-2-Clause | Free | |
 | React, Vite, TanStack Query, react-virtuoso | MIT | Free | |
 | Testcontainers for .NET, NetArchTest, NSubstitute | MIT | Free | |
+| YamlDotNet | MIT | Free | Test-side only — the contract suite reads `contracts/openapi.yaml` so it asserts against the committed document rather than a copy of it in C# |
 | Prometheus, Grafana, Loki, Jaeger, OpenTelemetry | Apache-2.0 / AGPLv3 (Loki, Grafana) | Free self-hosted | |
 | Trivy, Gitleaks, Semgrep OSS | Apache-2.0 / MIT / LGPL-2.1 | Free | |
 | k6 | AGPL-3.0 | Free | Used as a tool, not linked |

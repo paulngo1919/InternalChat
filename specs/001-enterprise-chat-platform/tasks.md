@@ -84,53 +84,64 @@ come first deliberately — they are what make Principles I and IV enforceable r
 
 ### Persistence
 
-- [ ] T025 Create `ChatDbContext` and configuration conventions in `src/InternalChat.Infrastructure/Persistence/ChatDbContext.cs`
-- [ ] T026 Create the initial migration with monthly `RANGE` partitioning for `messages` in `src/InternalChat.Infrastructure/Persistence/Migrations/`
-- [ ] T027 Create the migration runner as a separate idempotent Compose step in `deploy/Dockerfile.migrations` and `deploy/docker-compose.yml`
-- [ ] T028 [P] Create an EF Core interceptor that fails integration tests when a request exceeds its query-count budget in `src/InternalChat.Infrastructure/Persistence/QueryCountInterceptor.cs`
+- [X] T025 Create `ChatDbContext` and configuration conventions in `src/InternalChat.Infrastructure/Persistence/ChatDbContext.cs` — snake_case, `timestamptz`, bounded strings, assembly-scanned configurations, plus `ChatDbContextFactory` for design-time tooling
+- [X] T026 Create the initial migration with monthly `RANGE` partitioning for `messages` in `src/InternalChat.Infrastructure/Persistence/Migrations/` — extensions plus the three partition-management functions; the `messages` table itself attaches to them in T088, since the entity does not exist until then. **Verified against real PostgreSQL: applied cleanly, partitions create/route/drop correctly, re-apply is a no-op**
+- [X] T027 Create the migration runner as a separate idempotent Compose step in `deploy/Dockerfile.migrations` and `deploy/docker-compose.yml` — EF migration bundle, non-root, `restart: 'no'`; `api` and `worker` gated on `service_completed_successfully`. ⚠️ **image not yet built**
+- [X] T028 [P] Create an EF Core interceptor that fails integration tests when a request exceeds its query-count budget in `src/InternalChat.Infrastructure/Persistence/QueryCountInterceptor.cs`
 
 ### Test infrastructure
 
-- [ ] T029 Create the Testcontainers fixture for PostgreSQL, Redis, RabbitMQ, MinIO, and Keycloak in `tests/Integration/Fixtures/StackFixture.cs`
-- [ ] T030 [P] Create the integration test base with per-test schema reset in `tests/Integration/IntegrationTestBase.cs`
-- [ ] T031 [P] Create a unit-test guard that fails any test exceeding 100 ms in `tests/Unit/UnitTestBase.cs`
+- [X] T029 Create the Testcontainers fixture for PostgreSQL, Redis, RabbitMQ, MinIO, and Keycloak in `tests/Integration/Fixtures/StackFixture.cs` — collection fixture, parallel start, image tags pinned to `docker-compose.yml`. **Verified by 7 smoke tests against real containers**
+- [X] T030 [P] Create the integration test base with per-test schema reset in `tests/Integration/IntegrationTestBase.cs` — truncate + Redis flush; migration history excluded by case-insensitive prefix
+- [X] T031 [P] Create a unit-test guard that fails any test exceeding 100 ms in `tests/Unit/UnitTestBase.cs` — **verified: guard fires over budget, stays quiet under it, idempotent on double dispose**
 
 ### Caching
 
-- [ ] T032 Implement `ICacheStore` over Redis, rejecting any write without a TTL, in `src/InternalChat.Infrastructure/Caching/RedisCacheStore.cs`
-- [ ] T033 [P] Integration test asserting a TTL-less cache write is refused in `tests/Integration/Caching/RedisCacheStoreTests.cs`
+- [X] T032 Implement `ICacheStore` over Redis, rejecting any write without a TTL, in `src/InternalChat.Infrastructure/Caching/RedisCacheStore.cs` — also rejects TTL above a 24h ceiling (catches `FromDays`/`FromSeconds` unit slips); `SCAN`-based prefix invalidation, environment-namespaced keys. Plus `InfrastructureServiceCollectionExtensions.AddInfrastructure()`
+- [X] T033 [P] Integration test asserting a TTL-less cache write is refused in `tests/Integration/Caching/RedisCacheStoreTests.cs` — 12 tests against real Redis, covering zero/negative/over-ceiling TTL, prefix invalidation scope, namespacing, and unreadable-entry-as-miss
 
 ### Messaging (Principle VI)
 
-- [ ] T034 Create `outbox_message` and `processed_message` tables with EF configurations in `src/InternalChat.Infrastructure/Persistence/Configurations/`
-- [ ] T035 Implement `IEventPublisher` writing to the outbox inside the ambient transaction in `src/InternalChat.Infrastructure/Messaging/OutboxEventPublisher.cs`
-- [ ] T036 Declare exchanges, queues, DLX, and capped retry per `contracts/messaging.md` in `src/InternalChat.Infrastructure/Messaging/Topology.cs`
-- [ ] T037 Implement the outbox dispatcher using `FOR UPDATE SKIP LOCKED` with publisher confirms in `src/InternalChat.Worker/Jobs/OutboxDispatcher.cs`
-- [ ] T038 Implement the consumer host with manual ack and `processed_message` idempotency in `src/InternalChat.Infrastructure/Messaging/ConsumerHost.cs`
-- [ ] T039 Integration test asserting a publish failure leaves the outbox row undispatched and redelivers exactly once in `tests/Integration/Messaging/OutboxTests.cs`
-- [ ] T040 [P] Integration test asserting a redelivered message is processed exactly once in `tests/Integration/Messaging/IdempotencyTests.cs`
-- [ ] T041 [P] Integration test asserting an exhausted retry lands in the DLQ rather than disappearing in `tests/Integration/Messaging/DeadLetterTests.cs`
+- [X] T034 Create `outbox_message` and `processed_message` tables with EF configurations in `src/InternalChat.Infrastructure/Persistence/Configurations/` — partial index on pending rows; composite PK on `processed_message` IS the dedup mechanism. **Verified: both migrations applied to a fresh database, `payload` is `jsonb` with no length cap**
+- [X] T035 Implement `IEventPublisher` writing to the outbox inside the ambient transaction in `src/InternalChat.Infrastructure/Messaging/OutboxEventPublisher.cs` — does not touch RabbitMQ and does not call `SaveChanges`; the pipeline's transaction behavior owns the commit
+- [X] T036 Declare exchanges, queues, DLX, and capped retry per `contracts/messaging.md` in `src/InternalChat.Infrastructure/Messaging/ChatTopology.cs` — TTL-based retry queues (1s/5s/25s) with a **separate direct requeue exchange** so a retry returns to one queue instead of re-fanning to all; per-queue DLQ so depth alerts identify the consumer
+- [X] T037 Implement the outbox dispatcher using `FOR UPDATE SKIP LOCKED` with publisher confirms in `src/InternalChat.Infrastructure/Messaging/OutboxDispatcher.cs` plus `RabbitMqConnectionProvider` — rows marked dispatched only after broker confirmation
+- [X] T038 Implement the consumer host with manual ack and `processed_message` idempotency in `src/InternalChat.Infrastructure/Messaging/ConsumerHost.cs` — dedup insert (`ON CONFLICT DO NOTHING`) shares the handler's transaction, so a failed handler rolls back the dedup record; never nacks with requeue
+- [X] T039 Integration test asserting a publish failure leaves the outbox row undispatched and redelivers exactly once in `tests/Integration/Messaging/OutboxTests.cs` — 6 tests against real PostgreSQL + RabbitMQ, including rollback-never-publishes and payload-carries-no-message-content
+- [X] T040 [P] Integration test asserting a redelivered message is processed exactly once in `tests/Integration/Messaging/ConsumerHostTests.cs` — 3 tests: triple delivery handled once, per-consumer dedup keying, failed handler rolls back the dedup record
+- [X] T041 [P] Integration test asserting an exhausted retry lands in the DLQ rather than disappearing in `tests/Integration/Messaging/ConsumerHostTests.cs` — 4 tests: no immediate requeue, TTL return with attempt counter carried, DLQ arrival with failure reason, message never lost. **Suite run 3× consecutively with no flakes**
 
 ### API cross-cutting
 
-- [ ] T042 Implement the Problem Details (RFC 9457) exception handler with no stack traces or SQL in `src/InternalChat.Api/Middleware/ProblemDetailsHandler.cs`
-- [ ] T043 [P] Configure per-user and per-IP rate limit policies for auth, send, search, and upload in `src/InternalChat.Api/RateLimiting/`
-- [ ] T044 [P] Configure CSP without `unsafe-inline`/`unsafe-eval`, HSTS, nosniff, Referrer-Policy, frame-deny, and a CORS allow-list in `deploy/nginx/nginx.conf`
-- [ ] T045 Configure OpenTelemetry traces, metrics, and logs with W3C context propagated across HTTP, SignalR, and RabbitMQ in `src/InternalChat.Api/Program.cs` and `src/InternalChat.Worker/Program.cs`
-- [ ] T046 [P] Create the observability stack (OTel Collector, Prometheus, Grafana, Loki, Jaeger) in `deploy/docker-compose.observability.yml`
+- [X] T042 Implement the Problem Details (RFC 9457) exception handler with no stack traces or SQL in `src/InternalChat.Api/Middleware/ProblemDetailsHandler.cs` — known exceptions mapped deliberately, everything else collapsed to a bare 500 with a trace id; `UnauthorizedAccessException` returns a **404-shaped** body so a refusal never reveals the resource exists (SC-017). Wired in `Program.cs`. ⚠️ no test yet — contract tests land in T054
+- [X] T043 [P] Configure per-user and per-IP rate limit policies for auth, send, search, and upload in `src/InternalChat.Api/RateLimiting/` — partitioned by authenticated subject falling back to IP, so one heavy user cannot exhaust a shared office egress address for the whole floor; auth is IP-only because the caller is by definition not yet authenticated. Limiter shape chosen per surface: fixed window for auth and search, token bucket for send (typing three messages in a row is a legitimate burst), **concurrency** for upload (the cost is a 500 MB transfer held open, not the request rate). Global backstop so a new endpoint is never unlimited by omission; rejections carry `Retry-After` and a Problem Details body. Wired in `Program.cs`
+- [X] T044 [P] Configure CSP without `unsafe-inline`/`unsafe-eval`, HSTS, nosniff, Referrer-Policy, frame-deny, and a CORS allow-list in `deploy/nginx/nginx.conf` plus `deploy/nginx/cors.inc` — all headers use `always` so they survive error responses; unlisted CORS origins map to empty, never `*`. **Config validated with `nginx -t`**
+- [X] T045 Configure OpenTelemetry traces, metrics, and logs with W3C context propagated across HTTP, SignalR, and RabbitMQ in `src/InternalChat.Api/Program.cs` and `src/InternalChat.Worker/Program.cs` — per-host setup (Api instruments ASP.NET Core, Worker does not), sharing activity-source and meter names via `src/InternalChat.Application/Telemetry/ChatTelemetry.cs`, since Infrastructure creates the messaging spans and Principle I forbids either host naming an Infrastructure type outside `Program.cs`. **Carrying `traceparent` is not the same as joining the trace**: `OutboxDispatcher` now opens a producer span parented to the row's stored context and puts *its own* id on the wire, and `ConsumerHost` opens a consumer span parented to the delivered header. Covered by `tests/Integration/Observability/TraceContinuityTests.cs` — **3 tests, each verified to fail when its parsing is removed.** The first draft of those tests passed against a deliberately broken implementation because `Activity.Current` was still ambient; they now null it out to reproduce the Worker's actual broker-callback conditions. SignalR needs no extra package — hub calls arrive over the negotiated HTTP connection; the hub-method span lands with T097
+- [X] T046 [P] Create the observability stack (OTel Collector, Prometheus, Grafana, Loki, Jaeger) in `deploy/docker-compose.observability.yml` — separate file, because losing observability must degrade operability and not the service. Collector is the single egress so swapping a backend touches one config file; it re-strips `message.body`, credentials, and auth headers as defence in depth behind FR-056. Loki retains 30 days, deliberately **not** conflated with the audit log's 1-year requirement, which is PostgreSQL's job. **Merged config validated with `docker compose -f docker-compose.yml -f docker-compose.observability.yml config`**
 
 ### Audit (Principle IV)
 
-- [ ] T047 Create the `audit_event` table and `IAuditLog` implementation in `src/InternalChat.Infrastructure/Persistence/AuditLog.cs`
-- [ ] T048 Grant the application role INSERT-only on `audit_event` in `src/InternalChat.Infrastructure/Persistence/Migrations/`
-- [ ] T049 [P] Integration test asserting the application role cannot UPDATE or DELETE an audit row in `tests/Integration/Audit/AuditImmutabilityTests.cs`
+- [X] T047 Create the `audit_event` table and `IAuditLog` implementation in `src/InternalChat.Infrastructure/Persistence/Audit/AuditLog.cs` — `inet` source address, `jsonb` detail, index behind SC-021; an unparseable address never costs the record
+- [X] T048 Grant the application role INSERT-only on `audit_event` in `src/InternalChat.Infrastructure/Persistence/Migrations/` — group role `internalchat_app` with SELECT+INSERT only; **TRUNCATE withheld separately from DELETE**; `REVOKE ALL FROM PUBLIC` first
+- [X] T049 [P] Integration test asserting the application role cannot UPDATE or DELETE an audit row in `tests/Integration/Audit/AuditImmutabilityTests.cs` — 7 tests **connecting as the restricted role, not the superuser**, asserting SQL state 42501 on UPDATE/DELETE/TRUNCATE while INSERT and SELECT succeed
 
 ### Seed and reverse proxy
 
-- [ ] T050 [P] Create the seeder tool for development data and load-test volume in `tools/Seeder/Program.cs`
-- [ ] T051 Configure TLS termination and the internal-only attachment location in `deploy/nginx/nginx.conf`
+- [X] T050 [P] Create the seeder tool for development data and load-test volume in `tools/Seeder/Program.cs` — `--dev` seeds 20 employees (the roster T061's Keycloak realm must mirror, joined on `external_subject`), 10 direct conversations, 2 groups, and 400 messages, one group deliberately over the 50-row history page so keyset pagination is exercised by just opening it. All ids are derived rather than random, so re-running appends nothing — **verified: a second run left 20/12/37/400 unchanged**. `--load N` bulk-loads via binary `COPY` at **~80,000 rows/s measured** (125 M ≈ 26 min), spread over the 12-month retention window and calling T026's `internalchat_ensure_month_partitions` first. Bodies come from a skewed bilingual vocabulary because a corpus of identical strings would make the D9 search budget pass while measuring nothing — **verified: 138 k distinct bodies in 200 k rows across 13 partitions, a rare term matching 7,409**. ⚠️ The tables it writes belong to T060/T088, so a schema preflight names the missing table and its owning task instead of failing on raw SQL
+- [X] T051 Configure TLS termination and the internal-only attachment location in `deploy/nginx/nginx.conf` — TLS 1.2/1.3, `location /internal-attachments/ { internal; }` reachable only via `X-Accel-Redirect` after the API's membership check (FR-025), range requests passed through for FR-022, `Content-Disposition: attachment` always. Dev certs via `deploy/scripts/generate-dev-certs.sh` (git-ignored)
 
-**Checkpoint**: Foundation ready — user story implementation can now begin.
+**Checkpoint**: Foundation ready (T016–T051) — user story implementation can now begin. Solution
+builds with zero warnings under `TreatWarningsAsErrors`; 20 architecture, 4 unit, and 42 integration
+tests pass, the latter against real PostgreSQL, Redis, RabbitMQ, MinIO, and Keycloak containers.
+
+Two things carried into Phase 3 rather than fixed here:
+
+- The `message` table does not exist yet, so the seeder's insert paths were verified against a
+  hand-built stand-in schema, not the real migration. T088 must re-run `--dev` and `--load` once
+  the real table lands.
+- `body_tsv` as `GENERATED ... to_tsvector('simple', unaccent(body))` **will be rejected**:
+  `unaccent` is STABLE, not IMMUTABLE, and a generated column requires IMMUTABLE. T163 needs an
+  IMMUTABLE wrapper function. Found while building the stand-in schema.
 
 ---
 

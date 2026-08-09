@@ -19,4 +19,8 @@
   <Folder Name="/tests/Unit/">
     <Project Path="tests/Unit/InternalChat.UnitTests.csproj" />
   </Folder>
+  <Folder Name="/tools/" />
+  <Folder Name="/tools/Seeder/">
+    <Project Path="tools/Seeder/InternalChat.Seeder.csproj" />
+  </Folder>
 </Solution>

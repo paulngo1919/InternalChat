@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Development and load-test data generator.
+
+    A tool, not a deployable. It is excluded from coverage because it is not part
+    of the running system, and it references Infrastructure directly because
+    seeding IS a persistence concern — it deliberately bypasses the Application
+    layer's use cases, which exist to enforce rules seeding does not need.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>InternalChat.Seeder</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\InternalChat.Infrastructure\InternalChat.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+
+</Project>

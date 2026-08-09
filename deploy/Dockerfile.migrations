@@ -1,0 +1,61 @@
+# Migration runner.
+#
+# Constitution Principle VII: "Database migrations MUST run as an explicit, idempotent step
+# separate from application start, so that a restarting container never races another on schema
+# changes." Two API replicas booting at once would otherwise both try to apply the same
+# migration, and the loser fails on the advisory lock or, worse, on a half-applied change.
+#
+# Built as an EF Core migration bundle: a self-contained executable that needs neither the SDK
+# nor the project sources at runtime. That keeps the runtime image small and means the deployed
+# artefact is the exact set of migrations that were built, not whatever the source tree happens
+# to contain at deploy time.
+
+# --- build ---------------------------------------------------------------------------------
+FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
+WORKDIR /src
+
+# Restore against the manifests only, so a source-only change reuses the cached package layer.
+COPY Directory.Build.props Directory.Packages.props InternalChat.slnx ./
+COPY src/InternalChat.Domain/InternalChat.Domain.csproj src/InternalChat.Domain/
+COPY src/InternalChat.Application/InternalChat.Application.csproj src/InternalChat.Application/
+COPY src/InternalChat.Infrastructure/InternalChat.Infrastructure.csproj src/InternalChat.Infrastructure/
+COPY src/InternalChat.Api/InternalChat.Api.csproj src/InternalChat.Api/
+COPY src/InternalChat.Worker/InternalChat.Worker.csproj src/InternalChat.Worker/
+COPY tests/Unit/InternalChat.UnitTests.csproj tests/Unit/
+COPY tests/Integration/InternalChat.IntegrationTests.csproj tests/Integration/
+COPY tests/Contract/InternalChat.ContractTests.csproj tests/Contract/
+COPY tests/Architecture/InternalChat.ArchitectureTests.csproj tests/Architecture/
+RUN dotnet restore src/InternalChat.Infrastructure/InternalChat.Infrastructure.csproj
+
+COPY src/ src/
+
+# Pinned to match the SDK so a tool upgrade cannot silently change generated SQL.
+RUN dotnet tool install --global dotnet-ef --version 10.0.9
+ENV PATH="/root/.dotnet/tools:${PATH}"
+
+RUN dotnet ef migrations bundle \
+        --project src/InternalChat.Infrastructure/InternalChat.Infrastructure.csproj \
+        --configuration Release \
+        --self-contained \
+        --runtime linux-x64 \
+        --force \
+        --output /app/efbundle
+
+# --- runtime -------------------------------------------------------------------------------
+# Self-contained bundle, so the runtime needs only glibc and ICU.
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble AS final
+WORKDIR /app
+
+# Constitution: images run as a non-root user.
+RUN groupadd --system --gid 64198 migrator \
+ && useradd --system --uid 64198 --gid migrator --no-create-home migrator
+
+COPY --from=build --chown=migrator:migrator /app/efbundle ./efbundle
+RUN chmod 0500 ./efbundle
+
+USER migrator
+
+# The bundle reads the connection string from --connection, supplied by Compose from .env.
+# It is idempotent: already-applied migrations are skipped, so re-running is safe and is what
+# makes this a deployment step rather than a one-shot manual action.
+ENTRYPOINT ["./efbundle"]

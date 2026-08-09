@@ -1,0 +1,33 @@
+# Grafana datasources, provisioned so the stack is useful on first start rather
+# than after a round of manual clicking (constitution: onboarding is three steps).
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      timeInterval: 15s
+
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      # Turns a trace id in a log line into a link to the trace. This is what
+      # makes "an employee reported error 00-4bf9…" a two-click investigation
+      # rather than a manual search across two systems.
+      derivedFields:
+        - datasourceUid: jaeger
+          matcherRegex: '"traceId":"([a-f0-9\-]+)"'
+          name: TraceID
+          url: '$${__value.raw}'
+
+  - name: Jaeger
+    type: jaeger
+    uid: jaeger
+    access: proxy
+    url: http://jaeger:16686

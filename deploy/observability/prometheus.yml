@@ -1,0 +1,29 @@
+# Prometheus scrape configuration.
+#
+# Scrapes the OTel Collector rather than the application directly, so the API
+# and Worker keep exactly one telemetry egress path and know nothing about what
+# stores their metrics.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    platform: internalchat
+
+scrape_configs:
+  - job_name: otel-collector
+    static_configs:
+      - targets: ['otel-collector:8889']
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+# Alerting rules live here once the platform is deployed. The constitution names
+# two that are not optional:
+#
+#   - DLQ depth above zero. Principle VI calls silent message loss a Sev-1
+#     defect; a dead-lettered message is not lost, but only if somebody is told.
+#   - Attachment storage approaching capacity (FR-028), so administrators are
+#     warned BEFORE uploads start failing for employees.
+rule_files: []

@@ -1,0 +1,81 @@
+# OpenTelemetry Collector — the single telemetry egress for the whole platform.
+#
+# Constitution: traces, metrics, and logs with W3C trace context propagated
+# across HTTP, SignalR, and RabbitMQ. Everything is self-hosted (Principle VIII).
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Bounded queue. Under a telemetry spike the collector must shed load rather
+  # than grow until the container is OOM-killed — losing traces is acceptable,
+  # taking the host down with them is not.
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 75
+    spike_limit_percentage: 15
+
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+
+  # FR-056 defence in depth. The application already refuses to log message
+  # bodies, attachment contents, and credentials — this removes them again on
+  # the way out, because one careless log statement should not put a message
+  # body into permanent storage.
+  attributes/scrub:
+    actions:
+      - key: message.body
+        action: delete
+      - key: attachment.content
+        action: delete
+      - key: authorization
+        action: delete
+      - key: http.request.header.authorization
+        action: delete
+      - key: http.request.header.cookie
+        action: delete
+      - key: password
+        action: delete
+      - key: token
+        action: delete
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true # In-cluster, on the private backend network only.
+
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+
+service:
+  telemetry:
+    logs:
+      level: warn
+
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/scrub, batch]
+      exporters: [otlp/jaeger]
+
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/scrub, batch]
+      exporters: [otlphttp/loki]

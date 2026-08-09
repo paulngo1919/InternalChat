@@ -44,8 +44,14 @@
         [InlineData] attributes and inline expectation arrays trigger this by design. The
         suggested fix — hoisting every literal to a static field — makes test data harder to
         read at the point of use, which is the opposite of what a test should optimise for.
+
+      CA1001 (type owns disposable fields but is not disposable)
+        xUnit owns test-class lifetime through IAsyncLifetime, whose DisposeAsync the analyzer
+        does not recognise as disposal. Implementing IAsyncDisposable as well would collide with
+        it — both declare DisposeAsync, differing only in return type. Resources held by test
+        classes ARE released, in the IAsyncLifetime.DisposeAsync override.
     -->
-    <NoWarn>$(NoWarn);CA1707;CA1861</NoWarn>
+    <NoWarn>$(NoWarn);CA1707;CA1861;CA1001</NoWarn>
   </PropertyGroup>
 
 </Project>

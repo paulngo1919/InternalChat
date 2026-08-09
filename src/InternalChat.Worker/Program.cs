@@ -7,9 +7,15 @@
 // consumers live here rather than inside the API so they execute exactly once regardless of
 // how many API instances are running.
 
+using InternalChat.Worker.Observability;
+
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddHttpClient();
+
+// Registered before anything else so a failure while starting a consumer or job is itself
+// traced and logged through the same pipeline rather than only reaching stdout.
+builder.Services.AddChatObservability(builder.Configuration, serviceName: "internalchat-worker");
 
 // Registered in later phases:
 //   builder.Services.AddApplication();

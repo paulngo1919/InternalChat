@@ -7,7 +7,18 @@
 // policy. tests/Architecture/AuthorizationCoverageTests.cs fails the build on any omission,
 // which is what makes deny-by-default a gate rather than a habit.
 
+using InternalChat.Api.Observability;
+using InternalChat.Api.RateLimiting;
+
 var builder = WebApplication.CreateBuilder(args);
+
+// RFC 9457 error responses. Registered before anything else so a failure during startup of a
+// later component still surfaces as a well-formed problem document rather than a raw stack trace.
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<InternalChat.Api.Middleware.ProblemDetailsHandler>();
+
+builder.Services.AddChatRateLimiting();
+builder.Services.AddChatObservability(builder.Configuration, serviceName: "internalchat-api");
 
 // Registered in later phases:
 //   builder.Services.AddApplication();                              // T024
@@ -15,10 +26,16 @@ var builder = WebApplication.CreateBuilder(args);
 //   builder.Services.AddChatAuthentication(builder.Configuration);  // T062
 //   builder.Services.AddChatAuthorization();                        // T066, T067
 //   builder.Services.AddSignalR().AddStackExchangeRedis(...);       // T097
-//   builder.Services.AddChatRateLimiting();                         // T043
-//   builder.Services.AddChatObservability();                        // T045
 
 var app = builder.Build();
+
+// Must be first in the pipeline: anything registered before it can throw outside its reach and
+// return a default error page, which is where stack traces escape.
+app.UseExceptionHandler();
+
+// After the exception handler so a rejection is still shaped as Problem Details, but before
+// endpoints so the limit is applied prior to any work being done.
+app.UseRateLimiter();
 
 // Liveness and readiness probes are required by the constitution's container rules.
 // They are deliberately anonymous — a probe that needs a token cannot report an outage.

@@ -1,0 +1,48 @@
+# EditorConfig for InternalChat.
+#
+# Constitution Principle II requires analyzers enabled and not suppressed without an inline
+# justification naming the rule and the reason. Everything switched off below is scoped to a
+# specific path and justified there — none of it applies to hand-written production code.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{cs,csproj,props,targets}]
+indent_size = 4
+
+[*.{json,yml,yaml,js,jsx,ts,tsx,css,html}]
+indent_size = 2
+
+[*.md]
+# Trailing double-space is a hard line break in Markdown.
+trim_trailing_whitespace = false
+
+[*.sh]
+end_of_line = lf
+
+# -----------------------------------------------------------------------------------------
+# EF Core migrations are GENERATED code.
+#
+# They are reviewed and hand-extended where they need raw SQL, but their scaffolded body is
+# produced by `dotnet ef migrations add` and will be regenerated. Rewriting generated array
+# literals into static fields to satisfy a style analyzer would be undone by the next scaffold,
+# and the code is never on a hot path — a migration runs once.
+#
+# Correctness analyzers stay ON here. Only style and micro-performance rules are relaxed.
+# -----------------------------------------------------------------------------------------
+[**/Migrations/*.cs]
+# CA1861: constant array arguments — EF scaffolds `new[] { "col_a", "col_b" }` for every
+# composite index and cannot be told otherwise.
+dotnet_diagnostic.CA1861.severity = none
+
+# CA1062: null-argument validation on the MigrationBuilder parameter EF itself supplies.
+dotnet_diagnostic.CA1062.severity = none
+
+# SA/IDE naming on scaffolded local identifiers.
+dotnet_diagnostic.IDE0300.severity = none

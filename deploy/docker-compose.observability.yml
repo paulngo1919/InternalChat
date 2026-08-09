@@ -1,0 +1,132 @@
+# =============================================================================
+# Observability stack — OTel Collector, Prometheus, Grafana, Loki, Jaeger.
+#
+# Constitution stack table: "OpenTelemetry (traces, metrics, logs)" exported to
+# a SELF-HOSTED backend. Principle VIII forbids a hosted APM, and CI gate 10
+# greps configuration for datadoghq.com, newrelic.com, sentry.io, and the like.
+#
+# Separate from docker-compose.yml on purpose. The application must run without
+# it — losing observability degrades operability, not the service. Start with:
+#
+#   docker compose -f deploy/docker-compose.yml \
+#                  -f deploy/docker-compose.observability.yml up -d
+#
+# Every image here is free and self-hostable. Grafana and Loki are AGPLv3, used
+# unmodified, which Principle VIII explicitly permits.
+# =============================================================================
+
+name: internalchat
+
+services:
+  # ---------------------------------------------------------------------------
+  # Collector — the single endpoint the API and Worker export to.
+  #
+  # Everything goes through here rather than each service exporting directly to
+  # three backends. Swapping a backend then changes one config file instead of
+  # every service's environment, and the application stays unaware of what is
+  # storing its telemetry.
+  # ---------------------------------------------------------------------------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.1
+    restart: unless-stopped
+    command: ['--config=/etc/otel/config.yaml']
+    volumes:
+      - ./observability/otel-collector.yaml:/etc/otel/config.yaml:ro
+    expose:
+      - '4317' # OTLP gRPC — what the API and Worker export to
+      - '4318' # OTLP HTTP
+      - '8889' # Prometheus scrape target, see observability/prometheus.yml
+    depends_on:
+      - prometheus
+      - loki
+      - jaeger
+    networks: [backend]
+
+  # ---------------------------------------------------------------------------
+  # Metrics. Scrapes the collector rather than the application directly, so the
+  # API keeps exactly one telemetry egress path.
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    expose:
+      - '9090'
+    networks: [backend]
+
+  # ---------------------------------------------------------------------------
+  # Logs. 30-day retention — long enough to investigate an incident, far short
+  # of the audit log's 1-year requirement, which is PostgreSQL's job and not
+  # this stack's. Operational logs and the audit log are different things with
+  # different guarantees; conflating them is how audit history quietly ages out.
+  # ---------------------------------------------------------------------------
+  loki:
+    image: grafana/loki:3.3.2
+    restart: unless-stopped
+    command: ['-config.file=/etc/loki/loki.yaml']
+    volumes:
+      - ./observability/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    expose:
+      - '3100'
+    networks: [backend]
+
+  # ---------------------------------------------------------------------------
+  # Traces. This is where the W3C trace context propagated through HTTP →
+  # outbox → RabbitMQ consumer becomes a single readable timeline.
+  # ---------------------------------------------------------------------------
+  jaeger:
+    image: jaegertracing/jaeger:2.2.0
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: 'true'
+    expose:
+      - '4317'
+      - '16686'
+    ports:
+      - '${JAEGER_UI_PORT:-16686}:16686'
+    networks: [backend]
+
+  # ---------------------------------------------------------------------------
+  # Dashboards.
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:11.5.1
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      # Anonymous access disabled even locally. Telemetry shows who talks to
+      # whom and how often — metadata worth protecting on its own.
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+    volumes:
+      - ./observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - '${GRAFANA_PORT:-3000}:3000'
+    depends_on:
+      - prometheus
+      - loki
+      - jaeger
+    networks: [backend]
+
+volumes:
+  prometheus-data:
+  loki-data:
+  grafana-data:
+
+# Must match docker-compose.yml exactly. Compose merges the two definitions when
+# both files are passed, and a mismatched driver makes the merge fail rather than
+# quietly produce a second network the API cannot reach.
+networks:
+  backend:
+    driver: bridge

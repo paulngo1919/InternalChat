@@ -303,6 +303,10 @@ services:
       Attachments__MaxImageBytes: ${MAX_IMAGE_BYTES}
       Attachments__MaxVideoBytes: ${MAX_VIDEO_BYTES}
       Authorization__MembershipCacheTtlSeconds: ${MEMBERSHIP_CACHE_TTL_SECONDS}
+
+      # Public half only — the API hands this to a subscribing browser and never sends a push
+      # itself, so it needs neither the private key nor the subject the Worker carries below.
+      WebPush__PublicKey: ${VAPID_PUBLIC_KEY}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
       OTEL_SERVICE_NAME: internalchat-api
       OTEL_SERVICE_NAMESPACE: ${OTEL_SERVICE_NAMESPACE}

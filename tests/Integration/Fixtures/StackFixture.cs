@@ -1,6 +1,8 @@
 using DotNet.Testcontainers.Builders;
 using InternalChat.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Minio;
+using Minio.DataModel.Args;
 using Testcontainers.Keycloak;
 using Testcontainers.Minio;
 using Testcontainers.PostgreSql;
@@ -108,6 +110,12 @@ public sealed class StackFixture : IAsyncLifetime
 
     /// <summary>MinIO secret key.</summary>
     public static string MinioSecretKey => MinioBuilder.DefaultPassword;
+
+    /// <summary>Bucket holding scanned-clean objects. Matches <c>deploy/docker-compose.yml</c>.</summary>
+    public const string AttachmentsBucket = "attachments";
+
+    /// <summary>Bucket holding uploads awaiting a verdict.</summary>
+    public const string QuarantineBucket = "attachments-quarantine";
 
     /// <summary>Keycloak base address.</summary>
     public Uri KeycloakBaseAddress => new(_keycloak.GetBaseAddress());
@@ -282,6 +290,48 @@ public sealed class StackFixture : IAsyncLifetime
             _keycloak.StartAsync()).ConfigureAwait(false);
 
         await ApplyMigrationsAsync().ConfigureAwait(false);
+        await CreateBucketsAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>A MinIO client bound to the containerised server.</summary>
+    /// <remarks>
+    /// Exposed so a test can put an object in quarantine directly — standing in for the browser
+    /// PUT that the API deliberately never performs, since bytes go from the client to MinIO and
+    /// never through .NET.
+    /// </remarks>
+    public IMinioClient CreateMinioClient() =>
+        new MinioClient()
+            .WithEndpoint(MinioEndpoint)
+            .WithCredentials(MinioAccessKey, MinioSecretKey)
+            .WithSSL(false)
+            .Build();
+
+    /// <summary>
+    /// Creates both attachment buckets, standing in for the <c>minio-init</c> Compose service.
+    /// </summary>
+    /// <remarks>
+    /// Done here rather than lazily in <c>MinioObjectStore</c> for the same reason production does
+    /// it in a separate service: an application that creates its own buckets holds bucket-creation
+    /// rights it never needs, and a misconfigured bucket name silently becomes a new empty bucket
+    /// instead of an error.
+    /// </remarks>
+    private async Task CreateBucketsAsync()
+    {
+        IMinioClient client = CreateMinioClient();
+
+        foreach (string bucket in new[] { AttachmentsBucket, QuarantineBucket })
+        {
+            bool exists = await client
+                .BucketExistsAsync(new BucketExistsArgs().WithBucket(bucket))
+                .ConfigureAwait(false);
+
+            if (!exists)
+            {
+                await client
+                    .MakeBucketAsync(new MakeBucketArgs().WithBucket(bucket))
+                    .ConfigureAwait(false);
+            }
+        }
     }
 
     /// <inheritdoc />

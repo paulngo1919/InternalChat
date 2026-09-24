@@ -2,6 +2,7 @@ using InternalChat.Domain.Common;
 using InternalChat.Domain.Conversations;
 using InternalChat.Domain.Employees;
 using InternalChat.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace InternalChat.IntegrationTests.Fixtures;
 
@@ -17,7 +18,7 @@ public sealed class FixedClock : IClock
 
     /// <summary>Creates a clock frozen at the current instant.</summary>
     public FixedClock()
-        : this(DateTimeOffset.UtcNow)
+        : this(InternalChat.Domain.Common.ClockResolution.Truncate(DateTimeOffset.UtcNow))
     {
     }
 
@@ -74,7 +75,57 @@ public static class TestData
         return employee.Id;
     }
 
-    /// <summary>Inserts a live membership granting <paramref name="employeeId"/> access.</summary>
+    /// <summary>
+    /// Inserts a group conversation with the given id, if one is not already there.
+    /// </summary>
+    /// <remarks>
+    /// Idempotent, because several tests seed two memberships into the same conversation and the
+    /// second call must not fail on the primary key.
+    /// </remarks>
+    public static async Task<Conversation> SeedConversationAsync(
+        ChatDbContext context,
+        Guid conversationId,
+        Guid createdBy,
+        HistoryVisibility historyVisibility = HistoryVisibility.Full,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        Conversation? existing = await context.Conversations
+            .FirstOrDefaultAsync(c => c.Id == conversationId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        FixedClock clock = new();
+
+        Conversation conversation = Conversation.CreateGroup(
+            conversationId,
+            $"seeded-{conversationId:N}"[..20],
+            createdBy,
+            historyVisibility,
+            clock);
+
+        conversation.ClearDomainEvents();
+
+        context.Conversations.Add(conversation);
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        return conversation;
+    }
+
+    /// <summary>
+    /// Inserts a live membership granting <paramref name="employeeId"/> access.
+    /// </summary>
+    /// <remarks>
+    /// Creates the conversation first when it does not exist. T088 added the foreign key from
+    /// <c>membership</c> to <c>conversation</c>, so a membership naming a conversation that was
+    /// never created is no longer insertable — and was never meaningful, since it is the
+    /// authorization record for a conversation there is no way to reach.
+    /// </remarks>
     public static async Task SeedMembershipAsync(
         ChatDbContext context,
         Guid conversationId,
@@ -85,6 +136,9 @@ public static class TestData
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
+
+        await SeedConversationAsync(context, conversationId, employeeId, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
 
         FixedClock clock = new();
         Membership membership = Membership.Join(conversationId, employeeId, role, visibleFromSeq, clock);

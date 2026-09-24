@@ -54,7 +54,7 @@ public sealed class MembershipCacheOptions
 /// a measurable timing signal about which conversations exist (SC-017).
 /// </para>
 /// </remarks>
-public sealed class MembershipCache : IMembershipReader
+public sealed class MembershipCache : IMembershipReader, IMembershipCacheInvalidator
 {
     private readonly ChatDbContext _context;
     private readonly ICacheStore _cache;

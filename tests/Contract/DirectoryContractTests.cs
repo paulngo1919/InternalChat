@@ -56,8 +56,8 @@ public sealed class DirectoryContractTests : IClassFixture<WebApplicationFactory
         string expected = _contract.BasePath + path;
 
         bool mapped = Endpoints().Any(endpoint =>
-            string.Equals(RouteOf(endpoint), expected, StringComparison.OrdinalIgnoreCase)
-            && MethodsOf(endpoint).Contains(method, StringComparer.OrdinalIgnoreCase));
+            string.Equals(RoutePatterns.Of(endpoint), expected, StringComparison.OrdinalIgnoreCase)
+            && RoutePatterns.MethodsOf(endpoint).Contains(method, StringComparer.OrdinalIgnoreCase));
 
         Assert.True(
             mapped,
@@ -65,7 +65,7 @@ public sealed class DirectoryContractTests : IClassFixture<WebApplicationFactory
             The contract documents {method} {expected}, and no endpoint serves it.
 
             Mapped routes:
-              {string.Join("\n  ", Endpoints().Select(e => $"{string.Join('|', MethodsOf(e))} {RouteOf(e)}").Order())}
+              {string.Join("\n  ", Endpoints().Select(e => $"{string.Join('|', RoutePatterns.MethodsOf(e))} {RoutePatterns.Of(e)}").Order())}
             """);
     }
 
@@ -81,7 +81,7 @@ public sealed class DirectoryContractTests : IClassFixture<WebApplicationFactory
 
         Assert.Contains(
             Endpoints(),
-            endpoint => RouteOf(endpoint).StartsWith(_contract.BasePath, StringComparison.Ordinal));
+            endpoint => RoutePatterns.Of(endpoint).StartsWith(_contract.BasePath, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -204,9 +204,4 @@ public sealed class DirectoryContractTests : IClassFixture<WebApplicationFactory
     private IEnumerable<Endpoint> Endpoints() =>
         _factory.Services.GetRequiredService<EndpointDataSource>().Endpoints;
 
-    private static string RouteOf(Endpoint endpoint) =>
-        endpoint is RouteEndpoint route ? $"/{route.RoutePattern.RawText?.TrimStart('/')}" : string.Empty;
-
-    private static IReadOnlyCollection<string> MethodsOf(Endpoint endpoint) =>
-        endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods ?? [];
 }

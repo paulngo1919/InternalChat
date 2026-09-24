@@ -45,14 +45,22 @@ public static class MeEndpoints
     /// The signed-in employee.
     /// </summary>
     /// <remarks>
-    /// <c>canReceiveNotifications</c> is <c>false</c> with reason <c>no_subscription</c> until push
-    /// subscriptions land in US4 (T130, T136). That is the honest answer today — nobody has a
-    /// subscription because there is nowhere to store one — and FR-040 requires the client to say
-    /// so plainly rather than let an employee assume they are reachable.
+    /// <c>canReceiveNotifications</c> reflects whether this employee holds at least one live push
+    /// subscription (T130, T136) — the half of FR-040 the server can actually know. It says nothing
+    /// about browser permission state or installation, which only the client can see
+    /// (<c>NotificationCapability.tsx</c>, T139).
     /// </remarks>
-    private static IResult GetMe(CurrentEmployee currentEmployee, HttpContext http)
+    private static async Task<IResult> GetMe(
+        CurrentEmployee currentEmployee,
+        IPushSubscriptionStore subscriptions,
+        HttpContext http,
+        CancellationToken cancellationToken)
     {
         EmployeeProfile employee = currentEmployee.Profile!;
+
+        bool hasSubscription = await subscriptions
+            .HasAnyAsync(employee.Id, cancellationToken)
+            .ConfigureAwait(false);
 
         return Results.Ok(new CurrentEmployeeResponse(
             employee.Id,
@@ -60,8 +68,8 @@ public static class MeEndpoints
             employee.Email,
             employee.AvatarUrl,
             http.User.IsInRole(AuthorizationPolicies.AdminRole),
-            CanReceiveNotifications: false,
-            NotificationBlockReasons.NoSubscription));
+            CanReceiveNotifications: hasSubscription,
+            hasSubscription ? null : NotificationBlockReasons.NoSubscription));
     }
 
     /// <summary>Sessions this platform has seen for the caller (FR-005).</summary>

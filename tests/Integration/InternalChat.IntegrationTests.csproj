@@ -30,6 +30,7 @@
     <PackageReference Include="Testcontainers.Redis" />
     <PackageReference Include="Testcontainers.RabbitMq" />
     <PackageReference Include="Testcontainers.Minio" />
+    <PackageReference Include="Minio" />
     <PackageReference Include="Testcontainers.Keycloak" />
   </ItemGroup>
 

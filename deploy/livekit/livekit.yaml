@@ -1,0 +1,77 @@
+# ---------------------------------------------------------------------------
+# LiveKit SFU configuration (T185, research.md D12).
+#
+# Read by deploy/docker-compose.media.yml on the media host. Every secret comes
+# from the environment; nothing sensitive is in this file.
+# ---------------------------------------------------------------------------
+
+port: 7880
+
+rtc:
+  # The UDP range WebRTC media uses. Wide because each participant's tracks take
+  # ports and a 25-person meeting (FR-042) at 50 concurrent meetings needs room.
+  # This range is why the service runs with host networking — publishing ten
+  # thousand ports through Docker's userland proxy does not work in practice.
+  port_range_start: 50000
+  port_range_end: 60000
+
+  # TCP fallback on 7881. Some corporate networks block UDP outright, and a
+  # participant who cannot use UDP must still be able to join — silently failing
+  # to send media is the worst outcome available, because the person cannot tell.
+  tcp_port: 7881
+
+  # Must be the media host's public address. LiveKit cannot infer it behind NAT,
+  # and getting it wrong produces meetings that connect and carry no media.
+  use_external_ip: true
+
+keys:
+  # Expanded from LIVEKIT_KEYS. This secret mints admission to any meeting
+  # (FR-041) and authenticates every webhook this system trusts about who
+  # attended one (FR-051) — it is the single most sensitive value in the
+  # deployment.
+  # ${LIVEKIT_KEYS}
+
+turn:
+  enabled: true
+
+  # TLS relay on 5349, the port most restrictive networks leave open because it
+  # is indistinguishable from HTTPS. Plain UDP TURN is deliberately not enabled:
+  # a relay that only works on networks that already permit UDP relays nothing.
+  tls_port: 5349
+  domain: ${TURN_DOMAIN}
+
+  # Certificates are mounted by the compose file. LiveKit will not start TURN
+  # over TLS without them, which is the correct failure — starting without the
+  # relay would leave the participants who need it unable to join and no signal
+  # that anything is wrong.
+  cert_file: /etc/turn/tls.crt
+  key_file: /etc/turn/tls.key
+
+webhook:
+  # Where room lifecycle events are posted (T189). The receiver verifies the
+  # HMAC signature over the raw body before reading it — that signature is the
+  # only credential, because LiveKit holds no user token.
+  urls:
+    - ${WEBHOOK_URL}
+
+  # Signed with the same key as join tokens; LiveKit uses one secret for both.
+  api_key: ${LIVEKIT_API_KEY}
+
+room:
+  # Empty rooms close after 5 minutes rather than immediately: a participant
+  # whose connection drops gets a window to reconnect into the same meeting
+  # instead of finding it gone. Closing is what fires room_finished, which is
+  # what ends the meeting (FR-047).
+  empty_timeout: 300
+
+  # A hard ceiling at the SFU as well as in the application. The application
+  # refuses the 26th join (FR-042); this is what holds if a token is ever minted
+  # by something that skipped that check.
+  max_participants: 25
+
+logging:
+  level: info
+
+  # JSON, so the media host's logs land in the same Loki pipeline as the
+  # application host's rather than needing a second parser.
+  json: true

@@ -136,3 +136,106 @@ public sealed class Membership
     /// <summary>Suppresses notifications until the given instant, or clears the setting.</summary>
     public void MuteUntil(DateTimeOffset? until) => MutedUntil = until;
 }
+
+/// <summary>Raised when a membership that already grants access is added again (409).</summary>
+public sealed class MemberAlreadyActiveException : InvalidOperationException
+{
+    /// <summary>Creates the exception.</summary>
+    public MemberAlreadyActiveException(Guid conversationId, Guid employeeId)
+        : base($"Employee {employeeId} is already a member of conversation {conversationId}.")
+    {
+        ConversationId = conversationId;
+        EmployeeId = employeeId;
+    }
+
+    /// <summary>Creates the exception.</summary>
+    public MemberAlreadyActiveException()
+    {
+    }
+
+    /// <summary>Creates the exception.</summary>
+    public MemberAlreadyActiveException(string message)
+        : base(message)
+    {
+    }
+
+    /// <summary>Creates the exception.</summary>
+    public MemberAlreadyActiveException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+
+    /// <summary>The conversation.</summary>
+    public Guid ConversationId { get; }
+
+    /// <summary>The employee already holding a live membership.</summary>
+    public Guid EmployeeId { get; }
+}
+
+/// <summary>What changed about a membership (<c>chat.membership.changed.v1</c>).</summary>
+public enum MembershipChangeKind
+{
+    /// <summary>A new membership, or a removed one restored.</summary>
+    Added,
+
+    /// <summary>Access withdrawn.</summary>
+    Removed,
+
+    /// <summary>The role changed without access itself changing.</summary>
+    RoleChanged,
+}
+
+/// <summary>
+/// Raised when a membership is added, removed, or its role changes (<c>chat.membership.changed.v1</c>).
+/// </summary>
+/// <remarks>
+/// <para>
+/// Not raised through <see cref="Common.Entity{TId}.Raise"/>: <see cref="Membership"/> is
+/// deliberately not an <see cref="Common.Entity{TId}"/> (see its remarks), so it has no
+/// <c>DomainEvents</c> list to add to. The use case that changes a membership constructs this event
+/// directly and hands it to <c>IEventPublisher</c>, which accepts a bare event for exactly this case.
+/// </para>
+/// <para>
+/// <see cref="Change"/> is the wire spelling (<c>added</c>/<c>removed</c>/<c>role_changed</c>,
+/// matching contracts/messaging.md), not the <see cref="MembershipChangeKind"/> enum itself.
+/// <c>OutboxEventPublisher</c> serializes an enum field as its numeric value with no converter
+/// registered, and adding one would change every event's payload shape, not just this one — the
+/// same reasoning <c>MessagingMapper.ToWire</c> applies to HTTP contracts applies here.
+/// </para>
+/// </remarks>
+public sealed record MembershipChanged(
+    Guid EventId,
+    DateTimeOffset OccurredAt,
+    Guid ConversationId,
+    Guid EmployeeId,
+    string Change,
+    Guid ActorId,
+    long VisibleFromSeq) : DomainEvent(EventId, OccurredAt)
+{
+    /// <inheritdoc />
+    public override string EventType => "chat.membership.changed.v1";
+
+    /// <summary>Builds the event from the typed change, translating it to its wire spelling.</summary>
+    public static MembershipChanged Create(
+        Guid conversationId,
+        Guid employeeId,
+        MembershipChangeKind change,
+        Guid actorId,
+        long visibleFromSeq,
+        Common.IClock clock)
+    {
+        ArgumentNullException.ThrowIfNull(clock);
+
+        string wire = change switch
+        {
+            MembershipChangeKind.Added => "added",
+            MembershipChangeKind.Removed => "removed",
+            MembershipChangeKind.RoleChanged => "role_changed",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(change), change, "No wire spelling is defined for this membership change."),
+        };
+
+        return new MembershipChanged(
+            Guid.CreateVersion7(), clock.UtcNow, conversationId, employeeId, wire, actorId, visibleFromSeq);
+    }
+}

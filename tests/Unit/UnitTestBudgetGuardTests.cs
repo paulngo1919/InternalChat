@@ -63,9 +63,14 @@ public sealed class UnitTestBudgetGuardTests
             clock.UtcNow);
     }
 
+    // The probes waive the once-per-process warm-up exemption. They are not real tests, and one
+    // claiming it would make "the guard fires" depend on whether this class happened to run first —
+    // which is precisely how these tests failed when the exemption was introduced.
     private sealed class ExceedsBudgetProbe : UnitTestBase
     {
         protected override TimeSpan Budget => TimeSpan.Zero;
+
+        protected override bool MayClaimWarmupExemption => false;
 
         public void TriggerDispose() => Dispose();
     }
@@ -74,11 +79,15 @@ public sealed class UnitTestBudgetGuardTests
     {
         protected override TimeSpan Budget => TimeSpan.FromHours(1);
 
+        protected override bool MayClaimWarmupExemption => false;
+
         public void TriggerDispose() => Dispose();
     }
 
     private sealed class ProbeClock : UnitTestBase
     {
+        protected override bool MayClaimWarmupExemption => false;
+
         // Globally qualified: this project now has its own InternalChat.UnitTests.Domain
         // namespace for domain test classes, which otherwise shadows InternalChat.Domain here.
         public static global::InternalChat.Domain.Common.IClock Fixed() => FixedClock();

@@ -336,6 +336,34 @@ security sign-off list in the plan.
   Rejected on arithmetic: 25 participants × 24 outbound streams each is not survivable on a laptop
   uplink. This is the calculation that forced constitution amendment v1.2.0.
 
+**Open item — media host capacity is UNMEASURED (T197).**
+
+The 1,250 concurrent-participant ceiling (FR-043) is a *design* figure: 50 meetings × 25
+participants, derived from the requirement rather than from any observation of hardware. Nothing
+has yet established that a media host can carry it, and nothing in the test suite can:
+
+- `tests/Load/meetings.js` (T196) measures the **API's** behaviour at the ceiling — that the 26th
+  join is refused with 409 and that starts are refused with 503 once the counter is reached. k6
+  mints tokens; it opens no WebRTC transports and consumes no SFU CPU. A green run there says the
+  refusal logic is correct and says nothing about whether meetings work at scale.
+- `tests/e2e/v8-meetings.spec.ts` (T198) exercises two browsers against a real SFU, which is real
+  media but not load.
+
+Closing this needs the actual media host and a WebRTC load generator that publishes tracks. Until
+then the figure in `MeetingCapacityOptions.MaximumConcurrentParticipants` is configurable
+specifically so the measured number can replace it without a code deployment.
+
+**What to measure, and what would change:**
+
+| Observation | Consequence |
+| --- | --- |
+| CPU saturates below 1,250 | Lower the configured ceiling to the measured figure. FR-044 already refuses at it, so the platform degrades by refusing rather than by everyone's call getting worse. |
+| Uplink saturates first | The ceiling is bandwidth-bound, not CPU-bound; sizing the host differently is the answer, not a lower number. |
+| 1,250 is comfortable | Record the headroom. The figure stays, and this open item closes. |
+
+The measurement itself is the deliverable — the number matters less than knowing which resource
+runs out first, because that is what decides whether the next host is bigger or there are two.
+
 ---
 
 ## D13 — Frontend architecture
@@ -408,6 +436,7 @@ Re-verify each at pin time.
 | React, Vite, TanStack Query, react-virtuoso | MIT | Free | |
 | Testcontainers for .NET, NetArchTest, NSubstitute | MIT | Free | |
 | YamlDotNet | MIT | Free | Test-side only — the contract suite reads `contracts/openapi.yaml` so it asserts against the committed document rather than a copy of it in C# |
+| `Lib.Net.Http.WebPush` | MIT | Free | T134 — RFC 8291/8292 VAPID web push. Talks directly to whatever endpoint the browser subscription names; no account, SDK, or fee |
 | Prometheus, Grafana, Loki, Jaeger, OpenTelemetry | Apache-2.0 / AGPLv3 (Loki, Grafana) | Free self-hosted | |
 | Trivy, Gitleaks, Semgrep OSS | Apache-2.0 / MIT / LGPL-2.1 | Free | |
 | k6 | AGPL-3.0 | Free | Used as a tool, not linked |

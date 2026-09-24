@@ -277,6 +277,32 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ReadState" }
 
+  /conversations/{conversationId}/mute:
+    parameters:
+      - { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      tags: [Notifications]
+      summary: >
+        Mute or unmute this conversation for the caller (FR-037). Access is unaffected —
+        unread state still updates; only the interrupting notification is suppressed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mutedUntil: { type: string, format: date-time, nullable: true }
+      responses:
+        "200":
+          description: The mute setting now in effect
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mutedUntil: { type: string, format: date-time, nullable: true }
+
   /conversations/{conversationId}/attachments:
     parameters:
       - { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }
@@ -393,6 +419,23 @@ paths:
             schema: { $ref: "#/components/schemas/PushSubscriptionRequest" }
       responses:
         "201": { description: Registered }
+
+  /notifications/vapid-public-key:
+    get:
+      tags: [Notifications]
+      summary: >
+        The VAPID public key a browser needs to create a push subscription (FR-034).
+        Not a secret — handed to every subscribing browser (RFC 8292).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [publicKey]
+                properties:
+                  publicKey: { type: string }
 
   /conversations/{conversationId}/meetings:
     parameters:
@@ -580,7 +623,7 @@ components:
           description: Displayed to members, per US3 scenario 4.
         lastSeq: { type: integer, format: int64 }
         unreadCount: { type: integer }
-        muteduntil: { type: string, format: date-time, nullable: true }
+        mutedUntil: { type: string, format: date-time, nullable: true }
         memberCount: { type: integer }
         lastMessage: { $ref: "#/components/schemas/Message" }
 

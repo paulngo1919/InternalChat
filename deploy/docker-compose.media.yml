@@ -1,0 +1,92 @@
+# ---------------------------------------------------------------------------
+# The media host (T185, research.md D12, constitution v1.2.0).
+#
+# A SEPARATE file for a separate machine, and the separation is a constitutional
+# requirement rather than an operational preference. Constitution v1.2.0 permits
+# exactly one second host, for this: an SFU's CPU and UDP traffic profile is
+# nothing like the application's, and co-locating them means a busy meeting
+# degrades messaging — which FR-046 and SC-006 both rule out.
+#
+# The application MUST stay fully functional with this file's stack down.
+# Messaging, attachments, search and notifications do not touch it; meetings
+# report unavailable (MediaHostUnavailableException -> 503 with
+# retryAfterSeconds). That property is asserted by
+# tests/Integration/Meetings/MediaHostDegradationTests.cs.
+#
+#   docker compose -f deploy/docker-compose.media.yml up -d
+#
+# Requires deploy/.env.media — see deploy/.env.media.example.
+# ---------------------------------------------------------------------------
+
+name: internalchat-media
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: '10m'
+      max-file: '3'
+
+services:
+  # -------------------------------------------------------------------------
+  # LiveKit — the SFU. Selective forwarding rather than mixing: the server
+  # never decodes or re-encodes, which is what keeps 25 participants
+  # (FR-042) affordable on one machine and is the same reason research.md D8
+  # refuses to transcode uploaded video.
+  #
+  # host networking, deliberately. An SFU needs a large contiguous UDP port
+  # range for WebRTC media; publishing 10,000 ports through Docker's proxy
+  # costs a userland hop per port and, in practice, does not start. This is
+  # the one service in the deployment that is not network-isolated, and it is
+  # why it lives on a host of its own.
+  # -------------------------------------------------------------------------
+  livekit:
+    <<: [*restart, *logging]
+    image: livekit/livekit-server:v1.9.1
+    command: ['--config', '/etc/livekit.yaml']
+    network_mode: host
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    environment:
+      # Read by the config file through ${...} expansion. Never baked into the
+      # image: this key mints admission to any meeting (FR-041).
+      LIVEKIT_KEYS: '${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}'
+    healthcheck:
+      # LiveKit's own readiness endpoint. Checking the TCP port alone would
+      # report healthy while the server was still loading its configuration.
+      test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:7880/']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # -------------------------------------------------------------------------
+  # TURN — the relay for participants whose network refuses direct UDP.
+  #
+  # Not optional and not a nicety: corporate networks routinely block UDP
+  # outbound, and without a relay those participants join a meeting in which
+  # they can see everyone and nobody can see them. That failure is invisible
+  # to the person experiencing it, which is the worst kind.
+  #
+  # LiveKit embeds a TURN server, so this is configuration rather than a
+  # second image — one fewer component to run, patch, and explain.
+  # -------------------------------------------------------------------------
+
+  # -------------------------------------------------------------------------
+  # Prometheus node exporter — the media host is a second machine and would
+  # otherwise be invisible to the observability stack on the application host.
+  # An SFU that is quietly out of CPU looks, from the application side,
+  # exactly like a network problem.
+  # -------------------------------------------------------------------------
+  node-exporter:
+    <<: [*restart, *logging]
+    image: prom/node-exporter:v1.8.2
+    command:
+      - '--path.rootfs=/host'
+    network_mode: host
+    pid: host
+    volumes:
+      - /:/host:ro,rslave

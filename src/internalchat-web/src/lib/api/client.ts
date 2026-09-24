@@ -39,6 +39,14 @@ export interface Session {
   readonly isCurrent: boolean
 }
 
+/** `NotificationPreferences` in openapi.yaml (FR-037, FR-038). `dndStart`/`dndEnd` are `"HH:mm"`. */
+export interface NotificationPreferences {
+  readonly dndStart: string | null
+  readonly dndEnd: string | null
+  readonly timeZone: string
+  readonly digestAfterMinutes: number
+}
+
 /** `GET /directory/employees` — one search result (FR-007). */
 export interface EmployeeSummary {
   readonly id: string
@@ -93,7 +101,30 @@ export function createApiClient(baseUrl: string, getAccessToken: () => Promise<s
     }
   }
 
+  /**
+   * Issues an authorized request and hands back the raw response.
+   *
+   * Exposed because the messaging client needs the STATUS, not just the body: FR-011 distinguishes a
+   * newly created message (201) from a replay of a key already accepted (200), and a helper that
+   * only returned parsed JSON would throw that distinction away — leaving the client unable to tell
+   * its own retry from a new message.
+   */
+  async function authorized(path: string, init?: RequestInit): Promise<Response> {
+    const token = await getAccessToken()
+
+    if (!token) {
+      throw new ApiError(401, 'Not signed in.')
+    }
+
+    const headers = new Headers(init?.headers)
+    headers.set('Authorization', `Bearer ${token}`)
+    headers.set('Accept', 'application/json')
+
+    return fetch(`${baseUrl}${path}`, { ...init, headers })
+  }
+
   return {
+    authorized,
     getMe: () => request<CurrentEmployee>('/me'),
     getSessions: () => request<Session[]>('/me/sessions'),
     revokeSession: (sessionId: string) =>
@@ -102,6 +133,33 @@ export function createApiClient(baseUrl: string, getAccessToken: () => Promise<s
       request<EmployeeSummary[]>(
         `/directory/employees?q=${encodeURIComponent(query)}&limit=${String(limit)}`,
       ),
+
+    /** The key a browser needs to create a push subscription (FR-034). Not a secret. */
+    getVapidPublicKey: () => request<{ publicKey: string }>('/notifications/vapid-public-key'),
+
+    /** Do-not-disturb window and digest threshold (FR-037, FR-038). */
+    getNotificationPreferences: () =>
+      request<NotificationPreferences>('/notifications/preferences'),
+
+    /** Replaces the do-not-disturb window and digest threshold. */
+    updateNotificationPreferences: (preferences: NotificationPreferences) =>
+      request<NotificationPreferences>('/notifications/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(preferences),
+      }),
+
+    /** Registers this browser for push. Re-registering the same endpoint refreshes it. */
+    registerPushSubscription: (subscription: {
+      endpoint: string
+      p256dh: string
+      auth: string
+    }): Promise<void> =>
+      requestNoContent('/notifications/subscriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscription),
+      }),
   }
 }
 

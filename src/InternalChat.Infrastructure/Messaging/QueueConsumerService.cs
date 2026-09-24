@@ -48,8 +48,67 @@ public sealed partial class QueueConsumerService : BackgroundService
         _logger = logger;
     }
 
+    /// <summary>Backoff between attempts to reach the broker. Capped, so it keeps trying.</summary>
+    private static readonly TimeSpan[] AttachRetryDelays =
+    [
+        TimeSpan.FromSeconds(1),
+        TimeSpan.FromSeconds(5),
+        TimeSpan.FromSeconds(15),
+        TimeSpan.FromSeconds(30),
+    ];
+
     /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// <b>An unreachable broker must not take the host down.</b> The default
+    /// <c>BackgroundServiceExceptionBehavior</c> is <c>StopHost</c>, so letting the
+    /// <c>BrokerUnreachableException</c> escape here stopped the whole API — and with it every
+    /// SignalR connection — the moment RabbitMQ was briefly unavailable. Sending a message, reading
+    /// history, and holding a hub connection do not depend on the broker being up at that instant;
+    /// only the side effects behind the outbox do, and those are durable by design and dispatched
+    /// when it returns.
+    /// </para>
+    /// <para>
+    /// The constitution's degradation requirement says this in general terms for the media host, and
+    /// the reasoning transfers exactly: losing a component must degrade what depends on it, not the
+    /// service. So this retries indefinitely with a capped backoff and stays alive.
+    /// </para>
+    /// </remarks>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        int attempt = 0;
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await AttachAsync(stoppingToken).ConfigureAwait(false);
+                break;
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+#pragma warning disable CA1031 // Any broker failure is retried; see the remarks above.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                TimeSpan delay = AttachRetryDelays[Math.Min(attempt, AttachRetryDelays.Length - 1)];
+                attempt++;
+
+                AttachFailed(_logger, delay.TotalSeconds, ex);
+
+                await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
+            }
+        }
+
+        // The consumers run on broker callbacks, not on this task. Waiting here keeps the hosted
+        // service alive until shutdown; returning would let the host consider it finished.
+        await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Declares the topology and starts every registered consumer.</summary>
+    private async Task AttachAsync(CancellationToken stoppingToken)
     {
         await using (RabbitMQ.Client.IChannel channel =
             await _connectionProvider.CreateChannelAsync(stoppingToken).ConfigureAwait(false))
@@ -71,10 +130,6 @@ public sealed partial class QueueConsumerService : BackgroundService
         {
             NoConsumersRegistered(_logger);
         }
-
-        // The consumers run on broker callbacks, not on this task. Waiting here keeps the hosted
-        // service alive until shutdown; returning would let the host consider it finished.
-        await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -86,6 +141,14 @@ public sealed partial class QueueConsumerService : BackgroundService
 
     [LoggerMessage(EventId = 3400, Level = LogLevel.Information, Message = "Consuming {Queue}")]
     private static partial void ConsumerStarted(ILogger logger, string queue);
+
+    [LoggerMessage(
+        EventId = 3402,
+        Level = LogLevel.Warning,
+        Message = "Could not attach to the broker; retrying in {DelaySeconds}s. Queued side effects "
+            + "are held in the outbox and dispatched once it returns — nothing is lost, and the "
+            + "request path is unaffected.")]
+    private static partial void AttachFailed(ILogger logger, double delaySeconds, Exception exception);
 
     [LoggerMessage(
         EventId = 3401,

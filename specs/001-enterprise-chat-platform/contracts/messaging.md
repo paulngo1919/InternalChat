@@ -20,13 +20,36 @@ dead-letter). DLQ depth is alerted on — silent message loss is a Sev-1 defect.
 
 | Queue | Binding | Consumer | Concurrency |
 | --- | --- | --- | --- |
-| `directory.sync` | `chat.directory.*` | Worker | 1 |
-| `notifications.fanout` | `chat.message.sent.*` | Worker | 4 |
-| `attachments.scan` | `chat.attachment.uploaded.*` | Worker | 2 |
-| `search.index` | `chat.message.*` | Worker | 4 |
-| `audit.write` | `chat.audit.*` | Worker | 2 |
-| `realtime.fanout` | `chat.message.sent.*` | API | 8 |
-| `meetings.lifecycle` | `chat.meeting.*` | Worker | 1 |
+| `directory.sync` | `chat.directory.#` | Worker | 1 |
+| `notifications.fanout` | `chat.message.sent.#` | Worker | 4 |
+| `attachments.scan` | `chat.attachment.uploaded.#` | Worker | 2 |
+| `search.index` | `chat.message.#` | Worker | 4 |
+| `audit.write` | `chat.audit.#` | Worker | 2 |
+| `realtime.fanout` | `chat.message.#` | API | 8 |
+| `membership.fanout` | `chat.membership.#` | API | 4 |
+| `meetings.lifecycle` | `chat.meeting.#` | Worker | 1 |
+
+**Bindings use `#`, not `*`, and the difference is load-bearing.** AMQP's `*` matches exactly one
+word; `#` matches zero or more. A routing key is the event type, and event types carry a version
+suffix — so `chat.directory.employee.changed.v1` is five words and `chat.directory.*` matches none
+of it.
+
+An earlier revision of this table used `*` throughout and was wrong for four of the seven queues,
+including `directory.sync`. That would have meant deactivations reached no consumer at all and
+FR-003's five-minute revocation deadline was missed silently on every departure. Nothing would have
+failed visibly: an exchange discards an unroutable message, the publisher confirm still succeeds,
+and the outbox row is still marked dispatched. `tests/Integration/Messaging/TopologyRoutingTests.cs`
+now publishes every known event type through a real broker and asserts which queues receive it, so
+an unmatchable pattern fails the build instead of a deployment.
+
+`realtime.fanout` and `search.index` bind every message event rather than sends alone: FR-014
+requires an edit or a deletion to reach other clients in real time, and FR-032 requires it reflected
+in search results.
+
+⚠️ **Redeploying against an existing broker leaves the old bindings in place.** `QueueBind` adds a
+binding rather than replacing one, so the superseded `*` patterns survive until they are deleted.
+They match nothing and are harmless, but the runbook (T220) should include removing them so the
+topology a person reads in the management UI is the topology in this table.
 
 ## Envelope
 
@@ -127,8 +150,20 @@ Drives search reindexing so FR-032 holds — content a user can no longer access
 }
 ```
 
-Consumed by `search.index` (drop this employee's access to those results, FR-032), `audit.write`,
-and the API's real-time fan-out (move the connection out of the group immediately).
+**Correction (T116).** This section previously said the API's real-time fan-out, `search.index`, and
+`audit.write` all consumed this event. Only the first is true today:
+
+- **Real-time fan-out** (`membership.fanout`, API, T116): moves the affected employee's local
+  connections in or out of the conversation's SignalR group immediately, and sends
+  `ConversationCreated` (on add) or `MembershipRevoked` (on remove) so a client already connected
+  reflects the change without reconnecting (US3 scenarios 1 and 3).
+- **Audit** is not consumed from this event. `AddMember`/`RemoveMember` implement
+  `IAuditableRequest`, so the audit record commits synchronously inside the same transaction as the
+  membership row (T072's pattern) — the same reason `chat.audit.*` has no producer yet (see
+  `audit.write`'s note above).
+- **Search reindexing** (dropping a removed employee's access to search results, FR-032) is US6's
+  job and has no consumer yet. `search.index`'s binding (`chat.message.#`) does not match this event
+  type; T167 is where that gap closes.
 
 ### `chat.attachment.uploaded.v1`
 

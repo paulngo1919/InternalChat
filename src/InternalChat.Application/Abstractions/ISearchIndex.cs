@@ -12,6 +12,12 @@ namespace InternalChat.Application.Abstractions;
 /// <param name="To">Optional inclusive end of the date range.</param>
 /// <param name="Limit">Maximum results. Clamped to 100 by the endpoint.</param>
 /// <param name="Cursor">Opaque keyset cursor for the next page.</param>
+/// <param name="HasAttachment">
+/// Optional attachment filter (FR-030): <c>any</c>, <c>image</c>, or <c>video</c>. <c>null</c> does
+/// not filter. Only attachments that passed their scan count — a pending or infected upload is not
+/// something the searcher can open, so treating it as a match would produce a result that leads
+/// nowhere.
+/// </param>
 public sealed record SearchQuery(
     string Text,
     IReadOnlyCollection<Guid> ConversationIds,
@@ -19,7 +25,8 @@ public sealed record SearchQuery(
     DateTimeOffset? From = null,
     DateTimeOffset? To = null,
     int Limit = 25,
-    string? Cursor = null);
+    string? Cursor = null,
+    string? HasAttachment = null);
 
 /// <summary>One matching message.</summary>
 /// <param name="MessageId">Identity of the match.</param>

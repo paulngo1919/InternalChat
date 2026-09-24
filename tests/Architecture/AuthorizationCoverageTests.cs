@@ -55,6 +55,20 @@ public sealed class AuthorizationCoverageTests : IClassFixture<WebApplicationFac
         ["/api/v1/auth/backchannel-logout"] =
             "Keycloak back-channel logout (research.md D5). Called server-to-server with no user "
             + "context; the signed logout token is the credential and is fully validated.",
+
+        // T189. LiveKit posts room lifecycle events server-to-server and holds no user token, so
+        // there is nothing for the authorization pipeline to check. The HMAC signature IS the
+        // credential: MeetingWebhookEndpoints.VerifySignature checks the JWT's own HMAC against
+        // the API secret AND that its sha256 claim matches the raw request body, both in fixed
+        // time. Verifying only the token would accept a valid one replayed over a different body,
+        // which is what would let someone fabricate meeting attendance in the FR-051 audit record.
+        //
+        // Note this endpoint is outside /api/v1 and excluded from the OpenAPI document: it is not
+        // part of the client contract and nothing generated should call it.
+        ["/webhooks/livekit"] =
+            "LiveKit room lifecycle webhook (T189, research.md D12). Server-to-server with no user "
+            + "context; the HMAC signature over the raw body is the credential and is verified in "
+            + "full before the body is read.",
     };
 
     private readonly WebApplicationFactory<Program> _factory;

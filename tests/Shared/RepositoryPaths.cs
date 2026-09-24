@@ -35,6 +35,17 @@ public static class RepositoryPaths
         Path.Combine(FeatureDirectory, "contracts", "openapi.yaml");
 
     /// <summary>
+    /// The real-time hub contract (Principle VI).
+    /// </summary>
+    /// <remarks>
+    /// Markdown rather than a schema document, because SignalR has no schema language. T081 parses
+    /// its two tables so a renamed hub method or event fails the build — the only failure signal
+    /// available, since SignalR binds by name at runtime and reports nothing when a name is wrong.
+    /// </remarks>
+    public static string SignalRContract =>
+        Path.Combine(FeatureDirectory, "contracts", "signalr-hub.md");
+
+    /// <summary>
     /// The development Keycloak realm (T061).
     /// </summary>
     /// <remarks>

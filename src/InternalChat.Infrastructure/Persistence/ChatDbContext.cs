@@ -70,6 +70,47 @@ public class ChatDbContext : DbContext, IUnitOfWork
     public DbSet<Domain.Conversations.Membership> Memberships => Set<Domain.Conversations.Membership>();
 
     /// <summary>
+    /// Conversations. Also the per-conversation sequence allocator (research.md D1).
+    /// </summary>
+    public DbSet<Domain.Conversations.Conversation> Conversations => Set<Domain.Conversations.Conversation>();
+
+    /// <summary>
+    /// Messages. Partitioned by month on <c>sent_at</c> (research.md D11).
+    /// </summary>
+    public DbSet<Domain.Messages.Message> Messages => Set<Domain.Messages.Message>();
+
+    /// <summary>
+    /// Accepted client message keys — the exactly-once guarantee (FR-011).
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="Messages"/> because a unique constraint on a partitioned table must
+    /// include the partition key, and one that included <c>sent_at</c> would admit the very
+    /// duplicates it exists to prevent. See <see cref="Messages.MessageDeduplicationRecord"/>.
+    /// </remarks>
+    public DbSet<Messages.MessageDeduplicationRecord> MessageDeduplication =>
+        Set<Messages.MessageDeduplicationRecord>();
+
+    /// <summary>Per-employee, per-conversation read position (FR-036).</summary>
+    public DbSet<Domain.Notifications.ReadState> ReadStates => Set<Domain.Notifications.ReadState>();
+
+    /// <summary>Do-not-disturb and digest settings, one row per employee (FR-037, FR-038).</summary>
+    public DbSet<Domain.Notifications.NotificationPreference> NotificationPreferences =>
+        Set<Domain.Notifications.NotificationPreference>();
+
+    /// <summary>Registered browser push endpoints (FR-034, FR-040).</summary>
+    public DbSet<Notifications.PushSubscriptionRecord> PushSubscriptions =>
+        Set<Notifications.PushSubscriptionRecord>();
+
+    /// <summary>Uploaded images and videos, and where each one stands in its scan (FR-021–FR-025).</summary>
+    public DbSet<Domain.Attachments.Attachment> Attachments => Set<Domain.Attachments.Attachment>();
+
+    /// <summary>Video meetings and who was in them (FR-041–FR-044, FR-051).</summary>
+    public DbSet<Domain.Meetings.Meeting> Meetings => Set<Domain.Meetings.Meeting>();
+
+    /// <summary>Screen shares, one active per meeting by database constraint (FR-048, FR-050).</summary>
+    public DbSet<Domain.Meetings.ShareSession> ShareSessions => Set<Domain.Meetings.ShareSession>();
+
+    /// <summary>
     /// Applies the Npgsql configuration every context must share — production, design-time
     /// tooling, and tests alike.
     /// </summary>
@@ -95,6 +136,12 @@ public class ChatDbContext : DbContext, IUnitOfWork
                 // not at startup, which is a confusing place to discover a missing line.
                 npgsql.MapEnum<Domain.Employees.EmployeeStatus>("employee_status");
                 npgsql.MapEnum<Domain.Conversations.MembershipRole>("membership_role");
+                npgsql.MapEnum<Domain.Conversations.ConversationKind>("conversation_kind");
+                npgsql.MapEnum<Domain.Conversations.HistoryVisibility>("history_visibility");
+                npgsql.MapEnum<Domain.Attachments.AttachmentKind>("attachment_kind");
+                npgsql.MapEnum<Domain.Attachments.ScanVerdict>("scan_status");
+                npgsql.MapEnum<Domain.Meetings.ShareScope>("share_scope");
+                npgsql.MapEnum<Domain.Meetings.ShareStopReason>("share_stop_reason");
             });
 
         return builder;

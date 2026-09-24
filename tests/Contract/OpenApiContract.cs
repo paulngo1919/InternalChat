@@ -95,6 +95,56 @@ public sealed class OpenApiContract
         ];
     }
 
+    /// <summary>
+    /// The names of the <c>query</c> parameters an operation documents.
+    /// </summary>
+    /// <remarks>
+    /// Reads both the operation's own <c>parameters</c> and the path item's shared list, because
+    /// the document uses both forms and a parameter declared at path level applies to every
+    /// operation under it. Reading only one would report a documented filter as absent.
+    /// </remarks>
+    public IReadOnlyCollection<string> QueryParametersFor(string path, string method)
+    {
+        if (!Section("paths").TryGetValue(path, out object? item)
+            || item is not Dictionary<object, object> pathItem)
+        {
+            return [];
+        }
+
+        List<string> names = [];
+
+        Collect(pathItem.GetValueOrDefault("parameters"), names);
+
+        foreach ((object key, object? value) in pathItem)
+        {
+            if (string.Equals(key.ToString(), method, StringComparison.OrdinalIgnoreCase)
+                && value is Dictionary<object, object> operation)
+            {
+                Collect(operation.GetValueOrDefault("parameters"), names);
+            }
+        }
+
+        return names;
+
+        static void Collect(object? parameters, List<string> into)
+        {
+            if (parameters is not List<object> entries)
+            {
+                return;
+            }
+
+            foreach (object entry in entries)
+            {
+                if (entry is Dictionary<object, object> parameter
+                    && string.Equals(parameter.GetValueOrDefault("in")?.ToString(), "query", StringComparison.Ordinal)
+                    && parameter.GetValueOrDefault("name")?.ToString() is { } name)
+                {
+                    into.Add(name);
+                }
+            }
+        }
+    }
+
     /// <summary>Property names a schema declares as required, or empty when it declares none.</summary>
     public IReadOnlyCollection<string> RequiredPropertiesOf(string schemaName)
     {
@@ -131,6 +181,29 @@ public sealed class OpenApiContract
         }
 
         return definition.TryGetValue("type", out object? type) ? type.ToString() : null;
+    }
+
+    /// <summary>
+    /// The values a property's <c>enum</c> declares, in document order.
+    /// </summary>
+    /// <remarks>
+    /// Order is preserved and asserted against, because these are the exact strings that cross the
+    /// wire. A test that compared them as sets would pass while the API emitted a value the client
+    /// has no branch for.
+    /// </remarks>
+    public IReadOnlyCollection<string> EnumOfProperty(string schemaName, string propertyName)
+    {
+        if (!Schema(schemaName).TryGetValue("properties", out object? properties)
+            || properties is not Dictionary<object, object> map
+            || !map.TryGetValue(propertyName, out object? property)
+            || property is not Dictionary<object, object> definition
+            || !definition.TryGetValue("enum", out object? values)
+            || values is not List<object> list)
+        {
+            return [];
+        }
+
+        return [.. list.Select(v => v.ToString() ?? string.Empty)];
     }
 
     private Dictionary<object, object> Schema(string name)

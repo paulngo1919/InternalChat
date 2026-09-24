@@ -33,9 +33,13 @@ internal sealed class MembershipConfiguration : IEntityTypeConfiguration<Members
             .HasForeignKey(m => m.EmployeeId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // No foreign key to `conversation` yet — that table arrives with T088 (US2). Adding it
-        // here would make this migration unapplyable. T088 adds the constraint in its own
-        // migration, which is forward-only and therefore fine (Principle VII).
+        // Added by T088, once `conversation` existed to point at. A membership is the authorization
+        // record for a conversation; one naming a conversation that does not exist grants access to
+        // nothing and can only be a bug, so the database refuses to hold it.
+        builder.HasOne<Conversation>()
+            .WithMany()
+            .HasForeignKey(m => m.ConversationId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Conversation-list queries: "every conversation this employee is still in".
         builder.HasIndex(m => new { m.EmployeeId, m.RemovedAt })

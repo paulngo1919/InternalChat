@@ -61,19 +61,57 @@ if ($reports.Count -eq 0) {
     exit 1
 }
 
-# Merge across reports: a layer may be exercised by more than one test project, so take the
-# highest observed line-rate per assembly rather than whichever report happened to be read last.
-$observed = @{}
+# Merge across reports by taking the UNION of covered lines per assembly.
+#
+# The previous version took the highest line-rate any single report observed, which systematically
+# under-reports: a layer exercised partly by the unit suite and partly by the integration suite has
+# neither report showing the whole picture, and the maximum of two partial views is still partial.
+# A line covered by ANY suite is covered.
+#
+# Keyed by file and line number rather than by class, because a partial class -- every
+# LoggerMessage-generated type in this codebase -- appears in more than one report under names that
+# do not always agree.
+$covered = @{}
+$known = @{}
+
 foreach ($report in $reports) {
     [xml] $xml = Get-Content -LiteralPath $report.FullName -Raw
+
     foreach ($package in @($xml.coverage.packages.package)) {
         if ($null -eq $package) { continue }
+
         $name = [string] $package.name
-        $rate = [double] $package.'line-rate' * 100.0
-        if (-not $observed.ContainsKey($name) -or $rate -gt $observed[$name]) {
-            $observed[$name] = $rate
+
+        if (-not $covered.ContainsKey($name)) {
+            $covered[$name] = [System.Collections.Generic.HashSet[string]]::new()
+            $known[$name] = [System.Collections.Generic.HashSet[string]]::new()
+        }
+
+        foreach ($class in @($package.classes.class)) {
+            if ($null -eq $class -or $null -eq $class.lines) { continue }
+
+            foreach ($line in @($class.lines.line)) {
+                if ($null -eq $line) { continue }
+
+                $key = '{0}:{1}' -f $class.filename, $line.number
+
+                [void] $known[$name].Add($key)
+
+                if ([int] $line.hits -gt 0) {
+                    [void] $covered[$name].Add($key)
+                }
+            }
         }
     }
+}
+
+$observed = @{}
+foreach ($name in $known.Keys) {
+    $total = $known[$name].Count
+
+    # A package with no lines at all is reported as 0 rather than skipped: an assembly that
+    # produced an empty report is exactly the silent failure this script exists to catch.
+    $observed[$name] = if ($total -gt 0) { 100.0 * $covered[$name].Count / $total } else { 0.0 }
 }
 
 $failed = $false

@@ -3,13 +3,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createApiClient, type CurrentEmployee, type Session } from './lib/api/client'
 import { readApiBaseUrl } from './lib/auth/config'
 import { useAuth } from './lib/auth/authContext'
+import { ChatShell } from './features/messages/ChatShell'
+import { NotificationCapability } from './features/notifications/NotificationCapability'
+import { NotificationSettings } from './features/notifications/NotificationSettings'
 import './App.css'
 
 /**
- * US1's visible surface: who you are, and which devices are signed in as you (FR-005).
+ * The signed-in application: who you are, your devices (FR-005), and your conversations (US2).
  *
- * Conversations arrive with US2. What is here is what US1 actually delivers, and it is what
- * quickstart V1 walks through — reaching a signed-in view without ever creating a chat password.
+ * The profile and session surface stays because quickstart V1 walks through it, and because ending a
+ * session is the only self-service control an employee has over their own access.
  */
 export default function App() {
   const { getAccessToken, signOut } = useAuth()
@@ -25,6 +28,10 @@ export default function App() {
 
   const loadSessions = useCallback(async () => {
     setSessions(await api.getSessions())
+  }, [api])
+
+  const refreshMe = useCallback(async () => {
+    setMe(await api.getMe())
   }, [api])
 
   useEffect(() => {
@@ -86,17 +93,19 @@ export default function App() {
         </button>
       </header>
 
-      {/*
-        FR-040: say plainly when this browser cannot be reached, rather than letting an employee
-        assume a message will find them. Push subscriptions arrive with US4; until then the honest
-        answer is that nobody is reachable, and that is what this shows.
-      */}
-      {!me.canReceiveNotifications && (
-        <p role="status" data-testid="notification-warning">
-          Notifications are off for this browser, so you will not be alerted to new messages while
-          this tab is in the background.
-        </p>
-      )}
+      <NotificationCapability
+        canReceiveNotifications={me.canReceiveNotifications}
+        api={api}
+        onEnabled={() => {
+          void refreshMe()
+        }}
+      />
+
+      <ChatShell
+        authorized={api.authorized}
+        getAccessToken={getAccessToken}
+        currentEmployeeId={me.id}
+      />
 
       <section aria-labelledby="sessions-heading">
         <h2 id="sessions-heading">Your signed-in devices</h2>
@@ -118,6 +127,8 @@ export default function App() {
           ))}
         </ul>
       </section>
+
+      <NotificationSettings api={api} />
     </main>
   )
 }

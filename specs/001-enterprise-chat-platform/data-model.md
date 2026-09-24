@@ -139,11 +139,63 @@ Partitioned by `RANGE (sent_at)`, one partition per month (D11).
 **Indexes**:
 
 - PK `(id, sent_at)` — partition key must be in the PK.
-- **UNIQUE `(conversation_id, client_message_key)`** — this single index is the entire exactly-once
-  guarantee (FR-011).
-- UNIQUE `(conversation_id, seq)` — ordering and keyset pagination (FR-012, FR-013).
+- `(conversation_id, seq DESC)` — history paging and ordering (FR-012, FR-013). **Not unique**; see
+  below.
 - GIN on `body_tsv` — search (FR-029).
-- `(conversation_id, seq DESC)` — history paging.
+
+> **Correction (T088).** This section previously specified
+> `UNIQUE (conversation_id, client_message_key)` on `message` and called it "the entire exactly-once
+> guarantee", plus `UNIQUE (conversation_id, seq)`. **Neither index can exist**, and the reason is
+> not a limitation to work around:
+>
+> ```
+> ERROR: unique constraint on partitioned table must include all partitioning columns
+> DETAIL: UNIQUE constraint on table "message" lacks column "sent_at" which is part of
+>         the partition key.
+> ```
+>
+> Widening either to include `sent_at` would be worse than dropping it. `sent_at` is assigned by the
+> server at insert, so a retried send carries a *different* timestamp, the composite differs, and the
+> duplicate is admitted — an index that reads like a guarantee and enforces nothing. D1 needs
+> uniqueness spanning every partition; D11 needs monthly RANGE partitioning so retention is a
+> `DROP PARTITION`. The two requirements are in genuine tension.
+>
+> Resolved as follows:
+>
+> - **Exactly-once (FR-011)** moves to `message_dedup`, an un-partitioned table whose primary key
+>   *is* the constraint. See below.
+> - **`(conversation_id, seq)` uniqueness** is dropped to a plain index. Uniqueness is already
+>   guaranteed upstream: the sequence is allocated by `UPDATE ... RETURNING` under a row lock
+>   (D1), so the index was a backstop rather than the mechanism.
+
+---
+
+## message_dedup
+
+The exactly-once guarantee (FR-011). Deliberately **not** partitioned, so its primary key can span
+every month.
+
+| Column | Type | Constraints | Notes |
+| --- | --- | --- | --- |
+| `conversation_id` | `uuid` | PK part | |
+| `client_message_key` | `text` | PK part | ULID supplied by the sender (D1) |
+| `message_id` | `uuid` | NOT NULL | The message this key produced |
+| `sent_at` | `timestamptz` | NOT NULL | The winner's send time |
+
+**Indexes**: PK `(conversation_id, client_message_key)` — this is the constraint a concurrent retry
+collides on; `(sent_at)` for the retention sweep.
+
+**Rules**:
+
+- The send path inserts here **first**, with `ON CONFLICT DO NOTHING`. Zero rows affected means a
+  retry: the handler reads the winning row and returns that message rather than inserting a second
+  one. A `SELECT`-then-`INSERT` would not do — two concurrent attempts both see nothing and both
+  insert.
+- `sent_at` is carried for two reasons: the retention sweep deletes these rows by the same month
+  range it drops a partition for, and reading the winning message back requires it because
+  `message`'s primary key is `(id, sent_at)`.
+- **No foreign key to `message`.** One would have to include the partition key, and it would then
+  block the partition drop that retention depends on.
 
 **Rules**:
 

@@ -27,6 +27,31 @@ namespace InternalChat.UnitTests;
 /// </remarks>
 public abstract class UnitTestBase : IDisposable
 {
+    /// <summary>
+    /// Set once the first test in the process has been measured.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The first test in a run is exempt, and only the first.</b> Whichever test xUnit invokes
+    /// first pays for JIT-compiling xUnit's own reflection-based invocation path and for tiered
+    /// compilation of everything it touches — several hundred milliseconds that belong to the
+    /// runtime, not to the test. <see cref="AssemblyWarmup"/> pre-pays what a module initializer
+    /// can reach; the test framework's invoker is not reachable from there.
+    /// </para>
+    /// <para>
+    /// Leaving it unexempt produced exactly the failure this guard is meant to prevent people from
+    /// ignoring: a red build on the first run after any build, blaming a different trivial test each
+    /// time. A guard that cries wolf is a guard someone deletes.
+    /// </para>
+    /// <para>
+    /// The exemption is narrow on purpose. It covers one test per process, and a genuinely slow test
+    /// is only ever first occasionally — on every other run it is measured in full and fails. What
+    /// is given up is catching a slow test that is <em>always</em> ordered first, which xUnit does
+    /// not guarantee for any test.
+    /// </para>
+    /// </remarks>
+    private static int _firstTestMeasured;
+
     private readonly long _startTimestamp = Stopwatch.GetTimestamp();
     private bool _disposed;
 
@@ -35,6 +60,17 @@ public abstract class UnitTestBase : IDisposable
     /// meet the constitution's budget — and consider whether it belongs in the integration suite.
     /// </summary>
     protected virtual TimeSpan Budget => TimeSpan.FromMilliseconds(100);
+
+    /// <summary>
+    /// Whether this test may claim the once-per-process warm-up exemption.
+    /// </summary>
+    /// <remarks>
+    /// True for real tests. <c>UnitTestBudgetGuardTests</c>'s probes override it to <c>false</c>:
+    /// they exist to prove the guard fires, and a probe that silently claimed the exemption would
+    /// make that proof depend on execution order — the guard test failed exactly that way when the
+    /// exemption was first added, on the runs where it happened to be scheduled first.
+    /// </remarks>
+    protected virtual bool MayClaimWarmupExemption => true;
 
     /// <summary>
     /// A deterministic clock fixed at a known instant.
@@ -66,9 +102,25 @@ public abstract class UnitTestBase : IDisposable
         _disposed = true;
 
         TimeSpan elapsed = Stopwatch.GetElapsedTime(_startTimestamp);
-        if (elapsed <= Budget)
+
+        if (!MayClaimWarmupExemption)
         {
-            return;
+            if (elapsed <= Budget)
+            {
+                return;
+            }
+        }
+        else
+        {
+            // Claim the exemption whether or not it is needed, so it is spent by the first real
+            // test rather than lingering for an unrelated one later in the run. Exchange returns
+            // the PREVIOUS value, so this is true exactly once per process.
+            bool wasFirst = Interlocked.Exchange(ref _firstTestMeasured, 1) == 0;
+
+            if (elapsed <= Budget || wasFirst)
+            {
+                return;
+            }
         }
 
         throw new UnitTestBudgetExceededException(

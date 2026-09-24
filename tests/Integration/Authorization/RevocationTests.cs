@@ -124,10 +124,37 @@ public sealed class RevocationTests : IntegrationTestBase, IAsyncLifetime
         string token = await Stack.IssueAccessTokenAsync(Username);
 
         await using HubConnection connection = BuildConnection(token);
+
+        // The close reason is captured rather than just the fact of closing. "Expected Connected,
+        // actual Disconnected" says nothing about why, and the why is the whole diagnosis — an
+        // expired token, a revocation entry, and a throwing OnConnectedAsync all present
+        // identically.
+        Exception? closedWith = null;
+        bool closed = false;
+        connection.Closed += error =>
+        {
+            closedWith = error;
+            closed = true;
+            return Task.CompletedTask;
+        };
+
         await connection.StartAsync();
 
         // Comfortably more than several sweeps at one second each.
         await Task.Delay(TimeSpan.FromSeconds(5));
+
+        Assert.False(
+            closed,
+            $"""
+            The connection was closed even though this employee was never revoked, so the sweep is
+            closing connections it should leave alone — which would make the assertion in
+            Deactivating_an_employee_closes_an_already_open_connection pass for the wrong reason.
+
+            Close reason: {closedWith?.ToString() ?? "(none reported — a clean server-side abort)"}
+
+            API warnings and errors:
+            {_api.LogReport()}
+            """);
 
         Assert.Equal(HubConnectionState.Connected, connection.State);
     }

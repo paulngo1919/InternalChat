@@ -110,6 +110,33 @@ export default tseslint.config(
     },
   },
 
+  // Tests keep every rule that can catch a defect, and lose the four that only fire on the shape
+  // of a test double. Each is listed with the reason, because a blanket relaxation for `tests/`
+  // would quietly take the type-safety rules with it — and those are exactly the ones worth having
+  // over code that stands in for a real client.
+  {
+    files: ['tests/**/*.{ts,tsx}'],
+    rules: {
+      // A fake's method is passed around on purpose: `vi.fn()` spies are read back as
+      // `expect(client.listMembers)`, and a stub class's methods are handed to the code under
+      // test. `this` is never involved — these objects have no state to bind to.
+      '@typescript-eslint/unbound-method': 'off',
+
+      // A stub standing in for an async method has nothing to await; it exists to satisfy a
+      // signature. Making it non-async to satisfy the rule would change the type it is replacing.
+      '@typescript-eslint/require-await': 'off',
+
+      // Stub classes for SDK types (a fake XMLHttpRequest, a fake HubConnection) legitimately have
+      // no instance state beyond the methods being stubbed.
+      '@typescript-eslint/no-extraneous-class': 'off',
+
+      // Contradicts `no-non-null-assertion`, which is on: this rule asks for `x!` where the other
+      // forbids it. `document.querySelector(...) as HTMLElement` cannot satisfy both, and the
+      // assertion is the form that survives.
+      '@typescript-eslint/non-nullable-type-assertion-style': 'off',
+    },
+  },
+
   // Must stay last: turns off every rule that would fight Prettier's formatting.
   prettier,
 )

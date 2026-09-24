@@ -54,7 +54,7 @@ public sealed partial class AuditLog : IAuditLog
 
         AuditEventRecord record = new()
         {
-            OccurredAt = DateTimeOffset.UtcNow,
+            OccurredAt = Domain.Common.ClockResolution.Truncate(DateTimeOffset.UtcNow),
             ActorId = entry.ActorId,
             Action = entry.Action,
             SubjectType = entry.SubjectType,

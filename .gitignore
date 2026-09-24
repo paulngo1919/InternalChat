@@ -38,6 +38,11 @@ test-results/
 deploy/.env
 deploy/.env.*
 !deploy/.env.example
+
+# The media host's placeholders (T185). Needs its own negation: `deploy/.env.*`
+# matches it, and `!deploy/.env.example` un-ignores only that exact name — so
+# without this line the example nobody can deploy without is silently untracked.
+!deploy/.env.media.example
 *.pem
 *.key
 *.crt
@@ -65,3 +70,6 @@ Thumbs.db
 
 # Local Claude Code settings (personal, not shared)
 .claude/settings.local.json
+
+# Snapshot of the load-test database volume (tens of GB). See tests/Load/README.md.
+.loadvolume/

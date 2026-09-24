@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using InternalChat.Application.Abstractions;
@@ -40,7 +41,12 @@ public sealed partial class ConsumerHost : IAsyncDisposable
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly RabbitMqOptions _options;
     private readonly ILogger<ConsumerHost> _logger;
-    private readonly List<IChannel> _channels = [];
+    // Concurrent, not a plain List. StartAsync adds a channel per consumer and DisposeAsync
+    // walks them, and the two genuinely overlap: the host stops while the queue-consumer service is
+    // still attaching. With a List that surfaced as "Collection was modified; enumeration operation
+    // may not execute." thrown out of shutdown, failing whichever test happened to be disposing its
+    // API host at the time — a failure with nothing to do with the test that reported it.
+    private readonly ConcurrentBag<IChannel> _channels = [];
     private bool _disposed;
 
     /// <summary>Creates the host.</summary>
@@ -338,12 +344,12 @@ public sealed partial class ConsumerHost : IAsyncDisposable
 
         _disposed = true;
 
-        foreach (IChannel channel in _channels)
+        // Drained rather than iterated, so a channel added mid-shutdown is either disposed here
+        // or never handed over at all — never enumerated while being appended.
+        while (_channels.TryTake(out IChannel? channel))
         {
             await channel.DisposeAsync().ConfigureAwait(false);
         }
-
-        _channels.Clear();
     }
 
     [LoggerMessage(EventId = 2100, Level = LogLevel.Information, Message = "Consuming {Queue} with prefetch {Prefetch}")]

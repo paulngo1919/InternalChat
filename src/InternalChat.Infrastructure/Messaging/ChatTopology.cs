@@ -73,18 +73,68 @@ public static class ChatTopology
     public const string FailureReasonHeader = "x-internalchat-failure";
 
     /// <summary>Queues from <c>contracts/messaging.md</c>.</summary>
+    /// <summary>
+    /// Every queue, with the topic pattern it binds to the events exchange.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The patterns use <c>#</c>, not <c>*</c>, and the difference is not cosmetic.</b> AMQP's
+    /// <c>*</c> matches exactly one word; <c>#</c> matches zero or more. Routing keys here are event
+    /// types — <c>OutboxEventPublisher</c> sets <c>RoutingKey = domainEvent.EventType</c> — and those
+    /// carry a version suffix, so <c>chat.directory.employee.changed.v1</c> is five words and
+    /// <c>chat.directory.*</c> matches none of it.
+    /// </para>
+    /// <para>
+    /// An earlier version of this list used <c>*</c> throughout and was wrong for four of the seven
+    /// queues, including <c>directory.sync</c> — which meant deactivations would have reached no
+    /// consumer at all, and FR-003's five-minute revocation deadline would have been missed silently
+    /// on every departure. Nothing failed: the exchange discards an unroutable message, the publisher
+    /// confirm still succeeds, and the outbox row is still marked dispatched.
+    /// </para>
+    /// <para>
+    /// <c>TopologyRoutingTests</c> publishes every known event type through the real broker and
+    /// asserts which queues receive it, so a pattern that matches nothing now fails the build rather
+    /// than a deployment.
+    /// </para>
+    /// </remarks>
     public static readonly IReadOnlyList<QueueDefinition> Queues =
     [
         // Prefetch 1, unlike every other queue. Ordering matters here in a way it does not
         // elsewhere: a deactivation overtaken by a stale attribute update would silently restore
         // access to an employee who has left, which is the one failure FR-003 is written against.
-        new("directory.sync", "chat.directory.*", PrefetchCount: 1),
-        new("notifications.fanout", "chat.message.sent.*", PrefetchCount: 4),
-        new("attachments.scan", "chat.attachment.uploaded.*", PrefetchCount: 2),
-        new("search.index", "chat.message.*", PrefetchCount: 4),
-        new("audit.write", "chat.audit.*", PrefetchCount: 2),
-        new("realtime.fanout", "chat.message.sent.*", PrefetchCount: 8),
-        new("meetings.lifecycle", "chat.meeting.*", PrefetchCount: 1),
+        new("directory.sync", "chat.directory.#", PrefetchCount: 1),
+        new("notifications.fanout", "chat.message.sent.#", PrefetchCount: 4),
+        new("attachments.scan", "chat.attachment.uploaded.#", PrefetchCount: 2),
+
+        // Every message event, not just sends: FR-032 requires an edit or a deletion to be
+        // reflected in search results, so content someone can no longer access stops appearing.
+        new("search.index", "chat.message.#", PrefetchCount: 4),
+        new("audit.write", "chat.audit.#", PrefetchCount: 2),
+
+        // Also every message event, and for the same shape of reason: FR-014 requires an edit or a
+        // deletion to reach other clients in real time. Bound to sends alone, an edit would appear
+        // only after the reader reconnected and resynced.
+        new("realtime.fanout", "chat.message.#", PrefetchCount: 8),
+        new("meetings.lifecycle", "chat.meeting.#", PrefetchCount: 1),
+
+        // T192 — the audit record FR-051 requires. A SEPARATE queue from meetings.lifecycle even
+        // though both bind chat.meeting.#: one queue consumed by two hosts hands each message to
+        // whichever host reaches it first, so half the meetings would be announced and the other
+        // half audited. Two queues means both consumers see every event, which is the whole point
+        // of a topic exchange.
+        new("meetings.audit", "chat.meeting.#", PrefetchCount: 2),
+
+        // T116 — moves the affected connection's SignalR group assignment immediately on add or
+        // remove (US3 scenario 3, contracts/signalr-hub.md). A separate queue from realtime.fanout
+        // rather than a wider binding on it: that consumer's contract is "deliver a message event",
+        // and folding an unrelated event type into it would mean one binding pattern doing the job
+        // of two, which is exactly the kind of widening TopologyRoutingTests exists to catch.
+        new("membership.fanout", "chat.membership.#", PrefetchCount: 4),
+
+        // T137 — broadcasts a read-position advance to the same employee's other devices
+        // (FR-036). A distinct event type from chat.membership.changed.v1, so its own queue and
+        // binding, the same reasoning realtime.fanout and membership.fanout already split on.
+        new("readstate.fanout", "chat.read_state.#", PrefetchCount: 8),
     ];
 
     /// <summary>Retry queue name for a given queue and attempt.</summary>

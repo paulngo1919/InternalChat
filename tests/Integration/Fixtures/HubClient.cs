@@ -41,7 +41,16 @@ public static class HubClient
     /// obtained — and it is the only way to test a reconnect that carries a different token from
     /// the one the first connect used.
     /// </remarks>
-    public static HubConnection Create(ApiFactory api, Func<string> accessTokenProvider)
+    /// <param name="api">The hosted API.</param>
+    /// <param name="accessTokenProvider">Read on every connect.</param>
+    /// <param name="transports">
+    /// Restricts negotiation, e.g. to long polling, to exercise the fallback a proxy that strips
+    /// <c>Upgrade</c> forces (002 FR-010). Every transport when omitted.
+    /// </param>
+    public static HubConnection Create(
+        ApiFactory api,
+        Func<string> accessTokenProvider,
+        Microsoft.AspNetCore.Http.Connections.HttpTransportType? transports = null)
     {
         ArgumentNullException.ThrowIfNull(api);
         ArgumentNullException.ThrowIfNull(accessTokenProvider);
@@ -76,6 +85,11 @@ public static class HubClient
                     };
 
                     options.AccessTokenProvider = () => Task.FromResult<string?>(accessTokenProvider());
+
+                    if (transports is { } only)
+                    {
+                        options.Transports = only;
+                    }
                 })
             .Build();
     }

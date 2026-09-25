@@ -1,0 +1,263 @@
+{
+  "uid": "internalchat-delivery",
+  "title": "Message delivery",
+  "tags": [
+    "internalchat",
+    "002"
+  ],
+  "description": "002 FR-011 \u2014 how long message delivery takes, by stage. Budgets: end-to-end p95 300 ms / p99 500 ms; commit \u2192 hub send p95 150 ms.",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Commit \u2192 hub send (fan-out lag)",
+      "description": "Server-side: message commit to the hub send completing. The series DeliveryLatencySLO alerts on.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate({__name__=~\"chat_delivery_fanout_lag(_milliseconds)?_bucket\", event_type=\"chat.message.sent.v1\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "refId": "p50"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"chat_delivery_fanout_lag(_milliseconds)?_bucket\", event_type=\"chat.message.sent.v1\"}[$__rate_interval])))",
+          "legendFormat": "p95",
+          "refId": "p95"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate({__name__=~\"chat_delivery_fanout_lag(_milliseconds)?_bucket\", event_type=\"chat.message.sent.v1\"}[$__rate_interval])))",
+          "legendFormat": "p99",
+          "refId": "p99"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Outbox commit \u2192 broker confirm",
+      "description": "Was ~500 ms mean before 002 (fixed 1 s poll). Rising here means the Worker is on its backstop poll or the broker is slow.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate({__name__=~\"chat_delivery_outbox_lag(_milliseconds)?_bucket\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "refId": "p50"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"chat_delivery_outbox_lag(_milliseconds)?_bucket\"}[$__rate_interval])))",
+          "legendFormat": "p95",
+          "refId": "p95"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate({__name__=~\"chat_delivery_outbox_lag(_milliseconds)?_bucket\"}[$__rate_interval])))",
+          "legendFormat": "p99",
+          "refId": "p99"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Send \u2192 received in the browser (client lag)",
+      "description": "Reported by browsers once a minute; includes the network. Clock offset estimated from each employee's own sends.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate({__name__=~\"chat_delivery_client_lag(_milliseconds)?_bucket\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "refId": "p50"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=~\"chat_delivery_client_lag(_milliseconds)?_bucket\"}[$__rate_interval])))",
+          "legendFormat": "p95",
+          "refId": "p95"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate({__name__=~\"chat_delivery_client_lag(_milliseconds)?_bucket\"}[$__rate_interval])))",
+          "legendFormat": "p99",
+          "refId": "p99"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Hub connections by transport",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Long polling is slower (002 SC-005). A rising share usually means a proxy is stripping Upgrade.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (transport) ({__name__=~\"chat_hub_connections(_ratio)?\"})",
+          "legendFormat": "{{transport}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

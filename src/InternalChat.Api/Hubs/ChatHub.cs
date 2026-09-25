@@ -7,6 +7,8 @@ using InternalChat.Application.Behaviors;
 using InternalChat.Application.Messages;
 using InternalChat.Domain.Messages;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.Http.Connections.Features;
 using Microsoft.AspNetCore.SignalR;
 
 namespace InternalChat.Api.Hubs;
@@ -47,6 +49,10 @@ public sealed class ChatHub : Hub
     private readonly IEmployeeDirectory _directory;
     private readonly IConversationMembershipEvaluator _membership;
     private readonly IPresenceStore _presence;
+    private readonly IDeliveryMetrics _metrics;
+
+    /// <summary>Key under which the connection's transport name is kept for its disconnect.</summary>
+    private const string TransportItem = "internalchat.transport";
 
     /// <summary>Creates the hub.</summary>
     public ChatHub(
@@ -54,19 +60,22 @@ public sealed class ChatHub : Hub
         IConversationReader conversations,
         IEmployeeDirectory directory,
         IConversationMembershipEvaluator membership,
-        IPresenceStore presence)
+        IPresenceStore presence,
+        IDeliveryMetrics metrics)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(conversations);
         ArgumentNullException.ThrowIfNull(directory);
         ArgumentNullException.ThrowIfNull(membership);
         ArgumentNullException.ThrowIfNull(presence);
+        ArgumentNullException.ThrowIfNull(metrics);
 
         _dispatcher = dispatcher;
         _conversations = conversations;
         _directory = directory;
         _membership = membership;
         _presence = presence;
+        _metrics = metrics;
     }
 
     /// <summary>The SignalR group every member of a conversation is placed in.</summary>
@@ -90,6 +99,16 @@ public sealed class ChatHub : Hub
     {
         Guid employeeId = await ResolveEmployeeAsync().ConfigureAwait(false);
 
+        // 002 FR-010: tell the client which transport it actually got. First, so the indicator is
+        // right before any message arrives; to the caller only, and it carries nothing else.
+        string transport = TransportName(Context.Features.Get<IHttpTransportFeature>()?.TransportType);
+        Context.Items[TransportItem] = transport;
+        _metrics.ConnectionOpened(transport);
+
+        await Clients.Caller
+            .SendAsync(ChatHubEvents.ConnectionInfo, new { transport }, Context.ConnectionAborted)
+            .ConfigureAwait(false);
+
         IReadOnlyList<ConversationSummary> reachable = await _conversations
             .ListForEmployeeAsync(employeeId, ResyncConversationsHandler.MaximumConversations, null, Context.ConnectionAborted)
             .ConfigureAwait(false);
@@ -110,6 +129,25 @@ public sealed class ChatHub : Hub
 
         await base.OnConnectedAsync().ConfigureAwait(false);
     }
+
+    /// <summary>Counts the connection out of its transport's gauge.</summary>
+    public override Task OnDisconnectedAsync(Exception? exception)
+    {
+        if (Context.Items.TryGetValue(TransportItem, out object? transport) && transport is string name)
+        {
+            _metrics.ConnectionClosed(name);
+        }
+
+        return base.OnDisconnectedAsync(exception);
+    }
+
+    /// <summary>The contract's name for a negotiated transport (hub contract 1.1.0).</summary>
+    /// <remarks>
+    /// Server-sent events is reported as long polling: the contract has two states because the
+    /// client shows one indicator, and either fallback means "not WebSockets, messages may lag".
+    /// </remarks>
+    private static string TransportName(HttpTransportType? transport) =>
+        transport == HttpTransportType.WebSockets ? "webSockets" : "longPolling";
 
     /// <summary>
     /// Returns everything above each conversation's last seen sequence (FR-018, SC-022).

@@ -1,6 +1,9 @@
 # Real-Time Hub Contract: `/hubs/chat`
 
-**Version**: 1.0.0 | **Transport**: WebSockets (SignalR), Redis backplane
+**Version**: 1.1.0 | **Transport**: WebSockets (SignalR), Redis backplane
+
+1.1.0 (feature 002, additive): `ConnectionInfo` event; delivery rules 4–7 below. Delta and rationale:
+`specs/002-realtime-message-delivery/contracts/signalr-hub-delta.md`.
 
 `ChatHub` contains no business logic. Every server method delegates to an Application use case
 (Constitution Principle I). Every method declares an explicit authorization policy; an architecture
@@ -47,6 +50,7 @@ rather than duplicating retry semantics across two.
 | `MeetingStarted` | `Meeting` | FR-041 — shows the join prompt |
 | `MeetingEnded` | `{ meetingId }` | FR-047 |
 | `TokenExpiring` | `{ secondsRemaining }` | Access token nearing expiry |
+| `ConnectionInfo` | `{ transport: "webSockets" \| "longPolling" }` | Once per connect and reconnect, to the caller only. Client shows a "limited connection" indicator when not `webSockets` (002 FR-010) |
 
 ## Delivery guarantees
 
@@ -55,6 +59,15 @@ rather than duplicating retry semantics across two.
   makes SC-022 ("never lost, never duplicated") hold across reconnects and server restarts.
 - **No ordering guarantee across conversations.** Within a conversation, `seq` is the order, and a
   client MUST apply by `seq` rather than by arrival time.
+- **Events for the same message may arrive in any order** (1.1.0). `realtime.fanout` handles up to
+  eight events at once, so `MessageReceived`, `MessageEdited`, and `MessageDeleted` for one id can
+  overtake one another.
+- **Tombstone rule** (1.1.0). After applying `MessageDeleted` for an id, a client MUST show any later
+  `MessageReceived` or `MessageEdited` for that id as deleted.
+- **Latest-version rule** (1.1.0). For the same id, a client MUST keep the copy with the greatest
+  `editedAt` (null is oldest); a deleted copy beats any live one.
+- **No batching** (1.1.0). The server sends each event as soon as it is processed and never holds
+  events to coalesce them.
 - **The hub is not durable.** An event missed while disconnected is recovered by `Resync`, never by
   server-side buffering. This is deliberate: buffering per connection would make memory a function
   of disconnected-client count, which breaks at 7,000 connections.

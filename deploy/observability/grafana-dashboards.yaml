@@ -1,0 +1,13 @@
+# Grafana dashboard provisioning (002 T052). Dashboards in grafana-dashboards/ load on start and
+# are read-only in the UI, so the version in the repository is the one everybody sees.
+
+apiVersion: 1
+
+providers:
+  - name: internalchat
+    folder: InternalChat
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

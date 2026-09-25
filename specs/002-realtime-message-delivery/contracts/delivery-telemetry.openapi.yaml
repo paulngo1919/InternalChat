@@ -1,0 +1,91 @@
+openapi: 3.1.0
+info:
+  title: InternalChat — delivery telemetry (addition to feature 001 openapi.yaml)
+  version: 1.1.0
+  description: >
+    One endpoint through which a browser reports aggregated client-observed delivery lag
+    (research R6). Additive to specs/001-enterprise-chat-platform/contracts/openapi.yaml.
+    Carries bucket counts only - no message, conversation, or employee identifiers, and no
+    content (Constitution Principle IV).
+paths:
+  /api/v1/telemetry/delivery:
+    post:
+      operationId: reportDeliveryLag
+      summary: Report aggregated client-observed delivery lag for the last reporting window
+      description: >
+        Sent by the web client at most once every 60 seconds, and only when at least one message
+        was received in the window. The server adds the counts to the chat.delivery.client_lag
+        histogram. Authorization policy: authenticated employee (any); nothing about the caller is
+        recorded beyond what rate limiting needs. Rate limit: 2 requests per minute per employee;
+        excess requests get 429 and are dropped - telemetry is best-effort and never retried.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliveryLagReport'
+      responses:
+        '202':
+          description: Accepted. No body.
+        '400':
+          description: Validation failed (unknown bucket, negative count, window too large).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Not authenticated.
+        '429':
+          description: Rate limited. The client discards the report.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    DeliveryLagReport:
+      type: object
+      additionalProperties: false
+      required: [transport, windowSeconds, buckets]
+      properties:
+        transport:
+          type: string
+          enum: [webSockets, longPolling]
+        windowSeconds:
+          type: integer
+          minimum: 1
+          maximum: 300
+        clockOffsetMs:
+          type: integer
+          description: Estimated client-minus-server clock offset already subtracted from samples.
+          minimum: -600000
+          maximum: 600000
+        buckets:
+          type: object
+          description: >
+            Count of messages whose observed lag fell at or below each upper bound (ms), non-cumulative.
+            Keys MUST be one of the fixed bounds; "+Inf" collects the rest.
+          additionalProperties: false
+          properties:
+            '5': { type: integer, minimum: 0, maximum: 100000 }
+            '10': { type: integer, minimum: 0, maximum: 100000 }
+            '25': { type: integer, minimum: 0, maximum: 100000 }
+            '50': { type: integer, minimum: 0, maximum: 100000 }
+            '100': { type: integer, minimum: 0, maximum: 100000 }
+            '200': { type: integer, minimum: 0, maximum: 100000 }
+            '300': { type: integer, minimum: 0, maximum: 100000 }
+            '500': { type: integer, minimum: 0, maximum: 100000 }
+            '1000': { type: integer, minimum: 0, maximum: 100000 }
+            '2000': { type: integer, minimum: 0, maximum: 100000 }
+            '5000': { type: integer, minimum: 0, maximum: 100000 }
+            '+Inf': { type: integer, minimum: 0, maximum: 100000 }
+    ProblemDetails:
+      type: object
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }

@@ -522,6 +522,23 @@ paths:
               schema: { $ref: "#/components/schemas/ExportJob" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /telemetry/delivery:
+    post:
+      tags: [Telemetry]
+      summary: >
+        Report aggregated client-observed delivery lag (002 FR-011). Best-effort; at most once a
+        minute per browser; never retried. Carries no identifiers. Detail:
+        specs/002-realtime-message-delivery/contracts/delivery-telemetry.openapi.yaml
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeliveryLagReport" }
+      responses:
+        "202": { description: Accepted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -780,6 +797,21 @@ components:
         endpoint: { type: string }
         p256dh: { type: string }
         auth: { type: string }
+
+    DeliveryLagReport:
+      type: object
+      additionalProperties: false
+      required: [transport, windowSeconds, buckets]
+      properties:
+        transport: { type: string, enum: [webSockets, longPolling] }
+        windowSeconds: { type: integer, minimum: 1, maximum: 300 }
+        clockOffsetMs: { type: integer, nullable: true }
+        buckets:
+          type: object
+          description: >
+            Non-cumulative counts keyed by upper bound in ms — one of 5, 10, 25, 50, 100, 200,
+            300, 500, 1000, 2000, 5000, or +Inf. Each 0–100000.
+          additionalProperties: { type: integer, minimum: 0, maximum: 100000 }
 
     Meeting:
       type: object

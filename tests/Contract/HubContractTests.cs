@@ -107,6 +107,10 @@ public sealed class HubContractTests
     [InlineData(nameof(ChatHubEvents.ConversationCreated))]
     [InlineData(nameof(ChatHubEvents.TypingChanged))]
     [InlineData(nameof(ChatHubEvents.PresenceChanged))]
+
+    // 002 — hub contract 1.1.0, additive: the negotiated transport, so a client on long polling can
+    // say so (FR-010).
+    [InlineData(nameof(ChatHubEvents.ConnectionInfo))]
     public void Every_delivered_event_is_documented(string eventName)
     {
         Assert.Contains(eventName, _contract.ServerToClientEvents);

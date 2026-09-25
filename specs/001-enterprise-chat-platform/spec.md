@@ -507,7 +507,8 @@ handling. Stop sharing and confirm the view returns to camera video.
 #### Responsiveness (required by constitution)
 
 - **SC-006**: 95% of sent messages appear for all online recipients within 0.5 seconds of the
-  sender pressing send; 99% within 1 second.
+  sender pressing send; 99% within 1 second. *Superseded by 002 SC-001 (95% within 0.3 s, 99% within
+  0.5 s) — `specs/002-realtime-message-delivery/spec.md`.*
 - **SC-007**: 95% of searches return results within 1 second across the full retained history.
 - **SC-008**: 95% of notifications reach an employee's browser within 5 seconds of the triggering
   message, on every device where notifications have been enabled.

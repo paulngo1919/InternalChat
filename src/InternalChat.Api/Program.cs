@@ -170,6 +170,7 @@ api.MapAttachmentEndpoints();
 api.MapSearchEndpoints();
 api.MapMeetingEndpoints();
 api.MapAdminEndpoints();
+api.MapTelemetryEndpoints();
 
 // [Authorize] on the hub covers the connect. Re-validation on every invocation is
 // HubAuthorizationFilter, and closing an idle connection whose access has ended is

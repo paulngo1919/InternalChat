@@ -278,7 +278,7 @@ services:
       ASPNETCORE_HTTP_PORTS: '8080'
       INTERNALCHAT_ENV: ${INTERNALCHAT_ENV}
       ConnectionStrings__Postgres: >-
-        Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_APP_USER};Password=${POSTGRES_APP_PASSWORD};Maximum Pool Size=50;Timeout=15
+        Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_APP_USER};Password=${POSTGRES_APP_PASSWORD};Minimum Pool Size=4;Maximum Pool Size=50;Timeout=15
       ConnectionStrings__Redis: 'redis:6379,password=${REDIS_PASSWORD},abortConnect=false'
       RabbitMq__Host: rabbitmq
       RabbitMq__Port: '5672'
@@ -344,7 +344,7 @@ services:
       DOTNET_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
       INTERNALCHAT_ENV: ${INTERNALCHAT_ENV}
       ConnectionStrings__Postgres: >-
-        Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_APP_USER};Password=${POSTGRES_APP_PASSWORD};Maximum Pool Size=20;Timeout=15
+        Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_APP_USER};Password=${POSTGRES_APP_PASSWORD};Minimum Pool Size=2;Maximum Pool Size=20;Timeout=15
       ConnectionStrings__Redis: 'redis:6379,password=${REDIS_PASSWORD},abortConnect=false'
       RabbitMq__Host: rabbitmq
       RabbitMq__Port: '5672'

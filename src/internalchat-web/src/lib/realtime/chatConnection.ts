@@ -29,7 +29,16 @@ export const ChatEvents = {
   TypingChanged: 'TypingChanged',
   PresenceChanged: 'PresenceChanged',
   TokenExpiring: 'TokenExpiring',
+  ConnectionInfo: 'ConnectionInfo',
 } as const
+
+/** The transport the server negotiated for this connection (hub contract 1.1.0). */
+export type ChatTransport = 'webSockets' | 'longPolling'
+
+/** `ConnectionInfo`, sent once per connect before anything else (002 FR-010). */
+export interface ConnectionInfoEvent {
+  readonly transport: ChatTransport
+}
 
 /** `MessageDeleted` carries no body, deliberately (contracts/signalr-hub.md). */
 export interface MessageDeletedEvent {
@@ -64,6 +73,11 @@ export interface ChatConnectionOptions {
   readonly lastSeenSeq: () => Record<string, number>
   /** Applies messages recovered by a resync, and those pushed while connected. */
   readonly onMessages: (messages: readonly MessageResponse[]) => void
+  /**
+   * A message pushed live — never one recovered by `Resync`, whose age is the length of the outage
+   * rather than delivery lag. For client-side delivery telemetry (002 FR-011).
+   */
+  readonly onLiveMessage?: (message: MessageResponse) => void
   readonly onMessageEdited?: (message: MessageResponse) => void
   readonly onMessageDeleted?: (event: MessageDeletedEvent) => void
   readonly onTypingChanged?: (event: TypingChangedEvent) => void
@@ -78,6 +92,16 @@ export interface ChatConnectionOptions {
   readonly onMembershipRevoked?: (event: MembershipRevokedEvent) => void
   /** Told when the transport comes and goes, so the UI can say so.  */
   readonly onConnectionStateChanged?: (connected: boolean) => void
+  /**
+   * Told which transport the server negotiated, after every connect (002 FR-010). Long polling
+   * works, but every message arrives a little later, and the employee should know why.
+   */
+  readonly onTransportChanged?: (transport: ChatTransport) => void
+}
+
+/** The retry schedule: exponential for five attempts, then every 30 s, indefinitely. */
+function retryDelay(previousRetryCount: number): number {
+  return previousRetryCount < 5 ? 2 ** previousRetryCount * 1000 : 30_000
 }
 
 /**
@@ -107,8 +131,7 @@ export class ChatConnection {
       // few minutes shows an employee a dead tab that looks alive, and a laptop closed over lunch
       // is the common case rather than the exception.
       .withAutomaticReconnect({
-        nextRetryDelayInMilliseconds: (context) =>
-          context.previousRetryCount < 5 ? 2 ** context.previousRetryCount * 1000 : 30_000,
+        nextRetryDelayInMilliseconds: (context) => retryDelay(context.previousRetryCount),
       })
       .configureLogging(LogLevel.Warning)
       .build()
@@ -123,6 +146,9 @@ export class ChatConnection {
 
   /** Connects and closes the initial gap. */
   async start(): Promise<void> {
+    this.stopped = false
+    globalThis.addEventListener('online', this.handleOnline)
+
     await this.connection.start()
     this.options.onConnectionStateChanged?.(true)
     await this.resync()
@@ -130,7 +156,67 @@ export class ChatConnection {
 
   /** Disconnects. Does not sign out — that is the OIDC end-session endpoint's job. */
   async stop(): Promise<void> {
+    this.stopped = true
+    globalThis.removeEventListener('online', this.handleOnline)
+    clearTimeout(this.manualRetry)
+
     await this.connection.stop()
+  }
+
+  /** Set by `stop()`, so nothing reconnects a screen that has been closed. */
+  private stopped = false
+
+  private manualRetry: ReturnType<typeof setTimeout> | undefined
+
+  /**
+   * The network is back: reconnect now rather than at the next scheduled retry (002 SC-004).
+   *
+   * After a few minutes offline the automatic schedule is at 30 s, so without this an employee back
+   * from a dropped connection could wait up to half a minute before seeing anything. The automatic
+   * reconnect cannot be told to hurry, so it is stopped and a fresh start made; `start()` resyncs,
+   * which is what closes the gap.
+   */
+  private readonly handleOnline = (): void => {
+    const state = this.connection.state
+
+    if (this.stopped || state === HubConnectionState.Connected) {
+      return
+    }
+
+    if (state !== HubConnectionState.Reconnecting && state !== HubConnectionState.Disconnected) {
+      return
+    }
+
+    clearTimeout(this.manualRetry)
+    void this.reconnectNow(0)
+  }
+
+  /**
+   * One forced reconnect attempt. On failure, keeps trying on the normal schedule — having stopped
+   * the automatic reconnect, this is now the only thing that will bring the connection back.
+   */
+  private async reconnectNow(attempt: number): Promise<void> {
+    if (this.stopped) {
+      return
+    }
+
+    try {
+      if (this.connection.state !== HubConnectionState.Disconnected) {
+        await this.connection.stop()
+      }
+
+      if (this.stopped) {
+        return
+      }
+
+      await this.connection.start()
+      this.options.onConnectionStateChanged?.(true)
+      await this.resync()
+    } catch {
+      this.manualRetry = setTimeout(() => {
+        void this.reconnectNow(attempt + 1)
+      }, retryDelay(attempt))
+    }
   }
 
   /** Tells the server this employee is typing. Fire-and-forget by contract. */
@@ -183,6 +269,7 @@ export class ChatConnection {
 
   private registerHandlers(): void {
     this.connection.on(ChatEvents.MessageReceived, (message: MessageResponse) => {
+      this.options.onLiveMessage?.(message)
       this.options.onMessages([message])
     })
 
@@ -204,6 +291,10 @@ export class ChatConnection {
 
     this.connection.on(ChatEvents.MembershipRevoked, (event: MembershipRevokedEvent) => {
       this.options.onMembershipRevoked?.(event)
+    })
+
+    this.connection.on(ChatEvents.ConnectionInfo, (event: ConnectionInfoEvent) => {
+      this.options.onTransportChanged?.(event.transport)
     })
 
     this.connection.onreconnecting(() => {

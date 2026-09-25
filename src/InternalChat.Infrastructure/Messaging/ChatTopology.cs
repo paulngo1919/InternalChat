@@ -7,7 +7,11 @@ namespace InternalChat.Infrastructure.Messaging;
 /// <param name="Name">Queue name, also the consumer name used for deduplication.</param>
 /// <param name="BindingPattern">Topic pattern bound to the events exchange.</param>
 /// <param name="PrefetchCount">Unacknowledged messages allowed in flight.</param>
-public sealed record QueueDefinition(string Name, string BindingPattern, ushort PrefetchCount);
+/// <param name="Concurrency">
+/// Handlers allowed to run at once on this queue. 1 — serial — unless a queue has a reason to be
+/// otherwise and its consumers tolerate out-of-order handling (002 research R3).
+/// </param>
+public sealed record QueueDefinition(string Name, string BindingPattern, ushort PrefetchCount, ushort Concurrency = 1);
 
 /// <summary>
 /// Declares the exchanges, queues, retry path, and dead-letter queues from
@@ -114,7 +118,13 @@ public static class ChatTopology
         // Also every message event, and for the same shape of reason: FR-014 requires an edit or a
         // deletion to reach other clients in real time. Bound to sends alone, an edit would appear
         // only after the reader reconnected and resynced.
-        new("realtime.fanout", "chat.message.#", PrefetchCount: 8),
+        //
+        // Concurrency 8 (002 research R3): serial, one replica tops out at a few hundred deliveries
+        // a second — each is a read-back plus a backplane publish, all waiting on I/O — and a 1,000
+        // message/second burst queues behind itself for seconds. Safe because clients apply message
+        // events by seq with the tombstone and latest-version rules of hub contract 1.1.0, so the
+        // order in which concurrent handlers finish does not change what anyone ends up seeing.
+        new("realtime.fanout", "chat.message.#", PrefetchCount: 8, Concurrency: 8),
         new("meetings.lifecycle", "chat.meeting.#", PrefetchCount: 1),
 
         // T192 — the audit record FR-051 requires. A SEPARATE queue from meetings.lifecycle even

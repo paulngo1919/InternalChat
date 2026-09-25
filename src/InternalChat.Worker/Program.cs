@@ -57,6 +57,10 @@ builder.Services.AddHostedService<InternalChat.Infrastructure.Messaging.QueueCon
 // T037 and hosted here in T089's pass, having until then written to a table nothing drained.
 builder.Services.AddHostedService<InternalChat.Infrastructure.Messaging.OutboxDispatcherService>();
 
+// 002 — wakes the drain above the moment a transaction commits outbox rows, via PostgreSQL
+// NOTIFY. Without it the drain runs on its backstop poll only, and every message waits for it.
+builder.Services.AddHostedService<InternalChat.Infrastructure.Messaging.OutboxNotificationListener>();
+
 // Keeps monthly message partitions ahead of the clock (T089). Not housekeeping: an INSERT into a
 // month with no partition fails outright rather than falling back to the parent, so a boundary
 // crossed without a partition ready rejects every send on the platform.

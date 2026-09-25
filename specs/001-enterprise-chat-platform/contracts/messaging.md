@@ -224,6 +224,16 @@ Consumed by `meetings.lifecycle` (reconcile the platform-wide participant counte
 
 Audited per FR-052.
 
+## Dispatch (updated by 002)
+
+The outbox is drained by the Worker's dispatcher, which is **woken on commit** rather than polling:
+a statement-level trigger on `outbox_message` raises PostgreSQL `NOTIFY outbox_ready` (empty
+payload, delivered only on commit), and a 5 s backstop poll drains the table if a notification is
+lost. Batches are published on one long-lived confirming channel with pipelined confirms; a row is
+marked dispatched only when its own confirm arrives. `realtime.fanout` handles up to 8 deliveries
+concurrently; every other queue is serial. Detail and rationale:
+`specs/002-realtime-message-delivery/contracts/messaging-delta.md`.
+
 ## Consumer requirements
 
 Every consumer MUST:

@@ -18,7 +18,8 @@ import { MeetingPanel } from '../meetings/MeetingPanel'
 import { HistoryNotice } from '../conversations/HistoryNotice'
 import { membersQueryKey } from '../conversations/queryKeys'
 import { Composer } from './Composer'
-import { MessageList } from './MessageList'
+import { MessageList, type FailedMessage } from './MessageList'
+import { mergeMessages } from './messageStore'
 import { TypingIndicator } from './TypingIndicator'
 
 interface ConversationViewProps {
@@ -32,6 +33,16 @@ interface ConversationViewProps {
   readonly onStopTyping?: (conversationId: string) => void
   /** Messages arriving over SignalR for this conversation. */
   readonly incoming: readonly MessageResponse[]
+  /**
+   * Ids deleted while this screen was open (`MessageDeleted`). Tombstones stick: a copy of one of
+   * these arriving later — possible now that fan-out is concurrent — is still shown as deleted.
+   */
+  readonly deletedIds?: readonly string[]
+  /**
+   * An own send, timed: client time before and after, and the server's `sentAt` from the response.
+   * The delivery-telemetry clock-offset estimate is built from these (002 FR-011).
+   */
+  readonly onSendTimed?: (startedAt: number, finishedAt: number, serverSentAt: string) => void
   readonly kind: 'direct' | 'group'
   readonly historyVisibility: 'from_join' | 'full'
   /** This employee's own mute for this conversation (FR-037). Access is unaffected either way. */
@@ -49,12 +60,15 @@ export function ConversationView({
   onStartTyping,
   onStopTyping,
   incoming,
+  deletedIds = [],
+  onSendTimed,
   kind,
   historyVisibility,
   mutedUntil,
 }: ConversationViewProps) {
   const [messages, setMessages] = useState<readonly MessageResponse[]>([])
   const [pending, setPending] = useState<readonly QueuedMessage[]>([])
+  const [failed, setFailed] = useState<readonly FailedMessage[]>([])
   const [hasOlder, setHasOlder] = useState(false)
   const [showMembers, setShowMembers] = useState(false)
 
@@ -113,25 +127,25 @@ export function ConversationView({
         return
       }
 
-      setMessages((current) => {
-        const byId = new Map(current.map((m) => [m.id, m]))
-
-        for (const message of arriving) {
-          if (message.conversationId === conversationId) {
-            byId.set(message.id, message)
-          }
-        }
-
-        return [...byId.values()].sort((a, b) => a.seq - b.seq)
-      })
+      // Latest version wins (002 hub contract 1.1.0): a history page fetched before an edit must
+      // not overwrite the edit that arrived live while it was in flight.
+      setMessages((current) => mergeMessages(current, arriving, conversationId, []))
     },
     [conversationId],
   )
+
+  // Read through a ref: the queue below must be built once per client, and a callback prop that
+  // changes identity every render would otherwise rebuild it — dropping its subscribers mid-send.
+  const onSendTimedRef = useRef(onSendTimed)
+  useEffect(() => {
+    onSendTimedRef.current = onSendTimed
+  }, [onSendTimed])
 
   const queue = useMemo(
     () =>
       new OfflineQueue(async (message: QueuedMessage): Promise<SendOutcome> => {
         try {
+          const startedAt = Date.now()
           const result = await client.sendMessage(
             message.conversationId,
             message.clientMessageKey,
@@ -140,18 +154,34 @@ export function ConversationView({
             message.attachmentIds,
           )
 
+          // A replay carries the original sentAt, so only a fresh send is a clock probe.
+          if (!result.wasReplay) {
+            onSendTimedRef.current?.(startedAt, Date.now(), result.message.sentAt)
+          }
+
           // A replay is a success, not a conflict. The server returned the message this key already
           // produced, so applying it reconciles the optimistic bubble with the real one.
           apply([result.message])
           return { status: 'sent' }
         } catch (error) {
-          const status = (error as { status?: number }).status ?? 0
+          const { status = 0, detail } = error as { status?: number; detail?: string }
 
           // 4xx other than 429 will not succeed on retry — a body that is too long stays too long.
           // Anything else is worth retrying: offline, a timeout, a 5xx, or a rate limit.
-          return status >= 400 && status < 500 && status !== 429
-            ? { status: 'rejected', reason: `The server refused this message (${String(status)}).` }
-            : { status: 'retry' }
+          if (status >= 400 && status < 500 && status !== 429) {
+            const reason = detail ?? `The server refused this message (${String(status)}).`
+
+            // Shown, not dropped (002 FR-004): the sender must be able to tell that this one never
+            // reached anybody, and why.
+            setFailed((current) => [
+              ...current,
+              { clientMessageKey: message.clientMessageKey, body: message.body, reason },
+            ])
+
+            return { status: 'rejected', reason }
+          }
+
+          return { status: 'retry' }
         }
       }),
     [apply, client],
@@ -206,17 +236,10 @@ export function ConversationView({
    * one of them is updated and the other is not. Merging by id here is also idempotent, which the
    * at-least-once delivery in contracts/signalr-hub.md requires of any client.
    */
-  const visible = useMemo(() => {
-    const byId = new Map(messages.map((m) => [m.id, m]))
-
-    for (const message of incoming) {
-      if (message.conversationId === conversationId) {
-        byId.set(message.id, message)
-      }
-    }
-
-    return [...byId.values()].sort((a, b) => a.seq - b.seq)
-  }, [messages, incoming, conversationId])
+  const visible = useMemo(
+    () => mergeMessages(messages, incoming, conversationId, deletedIds),
+    [messages, incoming, conversationId, deletedIds],
+  )
 
   // Advances read position to the newest visible message (FR-036). Runs whenever the transcript
   // gains a message — including one that arrived live while this conversation stays open — so the
@@ -275,6 +298,10 @@ export function ConversationView({
         <MessageList
           messages={visible}
           pending={stillPending}
+          failed={failed.filter((f) => !confirmedKeys.has(f.clientMessageKey))}
+          onDismissFailed={(clientMessageKey) => {
+            setFailed((current) => current.filter((f) => f.clientMessageKey !== clientMessageKey))
+          }}
           currentEmployeeId={currentEmployeeId}
           onLoadOlder={loadOlder}
           hasOlder={hasOlder}

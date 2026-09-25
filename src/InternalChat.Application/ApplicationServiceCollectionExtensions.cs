@@ -24,6 +24,10 @@ public static class ApplicationServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IClock, SystemClock>();
+
+        // BCL-only, so it lives here rather than in Infrastructure; both hosts record through it
+        // (002 FR-011). Singleton because instruments are created once per meter.
+        services.TryAddSingleton<IDeliveryMetrics, Telemetry.DeliveryMetrics>();
         services.TryAddScoped<IUseCaseDispatcher, UseCaseDispatcher>();
 
         // The one authorization decision this platform has (Principle IV). Scoped because the
@@ -139,6 +143,10 @@ public static class ApplicationServiceCollectionExtensions
             Attachments.RequestUploadValidator>();
 
         services.TryAddScoped<IValidator<Notifications.MarkRead>, Notifications.MarkReadValidator>();
+
+        // 002 FR-011 — browsers reporting client-observed delivery lag.
+        services.TryAddScoped<IUseCase<Telemetry.RecordDeliveryLag, bool>, Telemetry.RecordDeliveryLagHandler>();
+        services.TryAddScoped<IValidator<Telemetry.RecordDeliveryLag>, Telemetry.RecordDeliveryLagValidator>();
         services.TryAddScoped<
             IValidator<Notifications.UpdatePreferences>,
             Notifications.UpdatePreferencesValidator>();

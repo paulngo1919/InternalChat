@@ -26,4 +26,6 @@ scrape_configs:
 #     defect; a dead-lettered message is not lost, but only if somebody is told.
 #   - Attachment storage approaching capacity (FR-028), so administrators are
 #     warned BEFORE uploads start failing for employees.
-rule_files: []
+rule_files:
+  # 002 FR-012 — delivery latency.
+  - /etc/prometheus/delivery-alerts.yml

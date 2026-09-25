@@ -364,6 +364,139 @@ public sealed class ConsumerHostTests : IntegrationTestBase, IAsyncLifetime
         }
     }
 
+    // ---------------------------------------------------------------------------------------
+    // 002 T032 — dispatch concurrency per queue (research R3)
+    // ---------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Realtime_fanout_handles_deliveries_concurrently_and_still_exactly_once()
+    {
+        // A serial fan-out consumer caps a replica at a few hundred deliveries per second, which a
+        // 1,000 message/second burst overruns (002 R0, C4). Concurrency must raise that ceiling
+        // without costing the idempotency guard anything.
+        ConcurrencyProbe consumer = new("realtime.fanout", workTime: TimeSpan.FromMilliseconds(20));
+
+        (int handled, int records) = await RunAsync(consumer, "chat.message.sent.v1", count: 200);
+
+        Assert.Equal(200, handled);
+        Assert.Equal(200, records);
+        Assert.Equal(200, consumer.Distinct);
+        Assert.True(consumer.MaxConcurrent > 1, $"realtime.fanout never overlapped handlers (max {consumer.MaxConcurrent}).");
+        Assert.True(consumer.MaxConcurrent <= ChatTopology.Queues.Single(q => q.Name == "realtime.fanout").Concurrency);
+    }
+
+    [Fact]
+    public async Task Directory_sync_is_never_concurrent()
+    {
+        // Ordering on directory.sync is a security property: a deactivation overtaken by a stale
+        // attribute update would restore access to someone who has left (FR-003). It stays serial.
+        ConcurrencyProbe consumer = new("directory.sync", workTime: TimeSpan.FromMilliseconds(10));
+
+        (int handled, _) = await RunAsync(consumer, "chat.directory.employee.changed.v1", count: 20);
+
+        Assert.Equal(20, handled);
+        Assert.Equal(1, consumer.MaxConcurrent);
+    }
+
+    /// <summary>Publishes <paramref name="count"/> events and consumes them through the real host.</summary>
+    private async Task<(int Handled, int Records)> RunAsync(ConcurrencyProbe consumer, string routingKey, int count)
+    {
+        IChannel admin = await _connectionProvider.CreateChannelAsync();
+        await using (admin.ConfigureAwait(false))
+        {
+            foreach (QueueDefinition queue in ChatTopology.Queues)
+            {
+                await admin.QueuePurgeAsync(queue.Name);
+            }
+        }
+
+        await using ConsumerHost host = CreateHost();
+        await host.StartAsync(consumer);
+
+        IChannel publisher = await _connectionProvider.CreateConfirmingChannelAsync();
+        await using (publisher.ConfigureAwait(false))
+        {
+            for (int i = 0; i < count; i++)
+            {
+                BasicProperties properties = new()
+                {
+                    MessageId = Guid.CreateVersion7().ToString(),
+                    Type = routingKey,
+                    ContentType = "application/json",
+                    DeliveryMode = DeliveryModes.Persistent,
+                    Headers = new Dictionary<string, object?>(StringComparer.Ordinal) { [ChatTopology.AttemptHeader] = 1 },
+                };
+
+                await publisher.BasicPublishAsync(
+                    ChatTopology.EventsExchange,
+                    routingKey,
+                    mandatory: false,
+                    properties,
+                    Encoding.UTF8.GetBytes("{}"));
+            }
+        }
+
+        System.Diagnostics.Stopwatch waited = System.Diagnostics.Stopwatch.StartNew();
+        while (consumer.Handled < count && waited.Elapsed < TimeSpan.FromSeconds(30))
+        {
+            await Task.Delay(50);
+        }
+
+        await using ChatDbContext context = CreateDbContext();
+        int records = await context.ProcessedMessages.CountAsync(p => p.ConsumerName == consumer.QueueName);
+
+        return (consumer.Handled, records);
+    }
+
+    /// <summary>Measures how many handlers overlap.</summary>
+    private sealed class ConcurrencyProbe : IMessageConsumer
+    {
+        private readonly TimeSpan _workTime;
+        private readonly ConcurrentDictionary<Guid, byte> _seen = new();
+        private int _running;
+        private int _maxConcurrent;
+        private int _handled;
+
+        public ConcurrencyProbe(string queueName, TimeSpan workTime)
+        {
+            QueueName = queueName;
+            _workTime = workTime;
+        }
+
+        public string QueueName { get; }
+
+        public int MaxConcurrent => Volatile.Read(ref _maxConcurrent);
+
+        public int Handled => Volatile.Read(ref _handled);
+
+        public int Distinct => _seen.Count;
+
+        public async Task HandleAsync(MessageEnvelope envelope, CancellationToken cancellationToken = default)
+        {
+            int now = Interlocked.Increment(ref _running);
+
+            int observed;
+            do
+            {
+                observed = Volatile.Read(ref _maxConcurrent);
+            }
+            while (now > observed && Interlocked.CompareExchange(ref _maxConcurrent, now, observed) != observed);
+
+            try
+            {
+                // I/O-shaped work: the fan-out consumer spends its time waiting on PostgreSQL and
+                // the backplane, which is exactly what concurrency overlaps.
+                await Task.Delay(_workTime, cancellationToken);
+                _seen.TryAdd(envelope.MessageId, 0);
+                Interlocked.Increment(ref _handled);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _running);
+            }
+        }
+    }
+
     private static BasicDeliverEventArgs Deliver(Guid messageId, int attempt)
     {
         BasicProperties properties = new()

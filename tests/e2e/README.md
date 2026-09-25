@@ -25,6 +25,7 @@ tests that pass with most of the system absent.
 | `E2E_REALM` | `internalchat` | Realm name |
 | `E2E_KEYCLOAK_ADMIN` | `admin` | From `deploy/.env` |
 | `E2E_KEYCLOAK_ADMIN_PASSWORD` | `change-me-keycloak` | From `deploy/.env` — override if you changed it |
+| `IDLE_MS` | `12000` | `v5-idle-delivery`: how long the platform is left quiet before each probe (002 FR-002). More than twice the 5 s backstop poll; the nightly job sets `600000`, the spec's 10 minutes |
 
 ## What these tests do to the stack
 

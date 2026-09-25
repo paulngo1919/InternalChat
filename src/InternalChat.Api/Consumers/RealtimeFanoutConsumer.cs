@@ -3,6 +3,7 @@ using InternalChat.Api.Contracts;
 using InternalChat.Api.Mapping;
 using InternalChat.Api.Hubs;
 using InternalChat.Application.Abstractions;
+using InternalChat.Domain.Common;
 using InternalChat.Domain.Messages;
 using Microsoft.AspNetCore.SignalR;
 
@@ -40,20 +41,28 @@ public sealed partial class RealtimeFanoutConsumer : IMessageConsumer
 
     private readonly IHubContext<ChatHub> _hub;
     private readonly IMessageRepository _messages;
+    private readonly IDeliveryMetrics _metrics;
+    private readonly IClock _clock;
     private readonly ILogger<RealtimeFanoutConsumer> _logger;
 
     /// <summary>Creates the consumer.</summary>
     public RealtimeFanoutConsumer(
         IHubContext<ChatHub> hub,
         IMessageRepository messages,
+        IDeliveryMetrics metrics,
+        IClock clock,
         ILogger<RealtimeFanoutConsumer> logger)
     {
         ArgumentNullException.ThrowIfNull(hub);
         ArgumentNullException.ThrowIfNull(messages);
+        ArgumentNullException.ThrowIfNull(metrics);
+        ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(logger);
 
         _hub = hub;
         _messages = messages;
+        _metrics = metrics;
+        _clock = clock;
         _logger = logger;
     }
 
@@ -131,7 +140,25 @@ public sealed partial class RealtimeFanoutConsumer : IMessageConsumer
             .SendAsync(eventName, message.ToResponse(), cancellationToken)
             .ConfigureAwait(false);
 
+        RecordLag(envelope.Type, payload);
         Delivered(_logger, envelope.Type, payload.ConversationId, payload.Seq);
+    }
+
+    /// <summary>
+    /// Records commit-to-hub-send for a new message (002 FR-011) — the series the latency alert reads.
+    /// </summary>
+    /// <remarks>
+    /// Measured from <c>SentAt</c>, the server timestamp of the send, so the whole server path is
+    /// in it: outbox wait, broker hop, this consumer's read-back, and the backplane publish. Sends
+    /// only: an edit or a delete carries the original <c>SentAt</c>, so measuring from it would
+    /// record how old the message was rather than how long delivery took.
+    /// </remarks>
+    private void RecordLag(string eventType, MessageEventPayload payload)
+    {
+        if (string.Equals(eventType, MessageEventTypes.Sent, StringComparison.Ordinal))
+        {
+            _metrics.RecordFanoutLag(eventType, _clock.UtcNow - payload.SentAt);
+        }
     }
 
     private static MessageEventPayload Deserialize(MessageEnvelope envelope) =>

@@ -60,16 +60,27 @@ Restore by reversing it. `.loadvolume/` is git-ignored — it is tens of gigabyt
 
 | Script | Budget rows | Notes |
 | --- | --- | --- |
-| `messaging.js` | send accept p95 150 ms / p99 300 ms; history page p95 250 ms / p99 500 ms | Holds 100 sends/s for two minutes, then bursts to 1,000/s (plan.md Scale/Scope). Reads history concurrently, because in production they compete for the same connection pool. |
+| `messaging.js` | send accept p95 150 ms / p99 300 ms; history page p95 250 ms / p99 500 ms; **delivery lag** (`delivery_lag_ms`) p95 300 ms / p99 500 ms steady, and p95 1 s for the burst into a 500-member group (002 SC-001, SC-003, SC-007) | Holds 100 sends/s for two minutes, then bursts to 1,000/s (plan.md Scale/Scope). Reads history concurrently, because in production they compete for the same connection pool. One SignalR listener per development user records send → `MessageReceived` lag; run k6 on the application host so `sentAt` (server clock) and the listener share a clock. |
 
 Thresholds are k6 `thresholds`, so a breach exits non-zero. That is what makes this a gate rather
 than a report.
 
 ### What these scripts do not measure
 
-- **End-to-end delivery** (SC-006, p95 500 ms). That is browser-to-browser and is measured by
-  `tests/e2e/v2-delivery-timing.spec.ts`. A fast accept with slow fan-out passes k6 and fails there,
-  which is exactly why both exist.
+- **Browser render.** `delivery_lag_ms` stops at the frame arriving on a socket. Browser-to-browser
+  delivery (002 SC-001, including the render) is measured by `tests/e2e/v2-delivery-timing.spec.ts`.
+
+### Measuring the 500-member group (002 SC-003)
+
+The burst goes to `GROUP_CONVERSATION_ID` when one is given. Create a group containing at least 500
+seeded employees (the load-volume seeder creates them: `dotnet run --project tools/Seeder -- --load`),
+add the development users to it so their listeners receive the burst, then:
+
+```bash
+k6 run -e GROUP_CONVERSATION_ID=<group id> tests/Load/messaging.js
+```
+
+Without it, the burst goes to direct conversations and is held to the steady-state budget.
 - **Idempotency.** Every send here uses a fresh `clientMessageKey`, deliberately: reusing one would
   measure the deduplication read instead of the accept path. Retry correctness is asserted in
   `tests/Integration/Messages/IdempotentSendTests.cs`, where the row count can actually be checked.

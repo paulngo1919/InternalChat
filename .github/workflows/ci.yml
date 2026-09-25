@@ -16,6 +16,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # 002 — nightly delivery run: the full 10-minute idle-then-send case (FR-002, SC-006), which is
+  # too slow for every pull request.
+  schedule:
+    - cron: '0 2 * * *'
 
 permissions:
   contents: read
@@ -330,6 +334,65 @@ jobs:
         run: |
           docker compose -f deploy/docker-compose.yml ps
           docker compose -f deploy/docker-compose.yml logs --tail 100
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f deploy/docker-compose.yml down -v
+
+  # ---------------------------------------------------------------------------
+  # Gate 11 — Delivery latency (002 FR-013): send → visible in another browser
+  # ---------------------------------------------------------------------------
+  # The regression gate for the reported delivery delay. Before 002 the outbox dispatcher slept a
+  # fixed second when idle, which put the browser-to-browser p95 near one second; these specs hold
+  # it to p95 300 ms / p99 500 ms and fail the workflow if it drifts back. On pull requests the idle
+  # period is 12 s (more than twice the backstop poll); the nightly run uses the spec's 10 minutes.
+  delivery:
+    name: 'Gate 11 · Delivery latency'
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Stack up
+        run: |
+          cp deploy/.env.example deploy/.env
+          docker compose -f deploy/docker-compose.yml up -d --wait --wait-timeout 300
+
+      - name: Seed the development roster and conversations
+        run: docker compose -f deploy/docker-compose.yml exec -T api dotnet run --project tools/Seeder -- --dev
+
+      - name: Install Playwright
+        run: |
+          npm --prefix tests/e2e ci
+          npm --prefix tests/e2e run install-browsers
+
+      - name: 'Gate 11 · Delivery timing and idle-then-send'
+        env:
+          IDLE_MS: ${{ github.event_name == 'schedule' && '600000' || '12000' }}
+        run: npm --prefix tests/e2e test -- v2-delivery-timing v5-idle-delivery
+
+      - name: Report status on failure
+        if: failure()
+        run: |
+          docker compose -f deploy/docker-compose.yml ps
+          docker compose -f deploy/docker-compose.yml logs --tail 200 api worker
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: delivery-playwright-report
+          path: tests/e2e/playwright-report
+          retention-days: 7
 
       - name: Tear down
         if: always()

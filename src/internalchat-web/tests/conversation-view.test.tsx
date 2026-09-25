@@ -2,6 +2,7 @@ import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ConversationView } from '../src/features/messages/ConversationView'
+import type { SendResult } from '../src/lib/api/messages'
 import { aMessage, fakeMessagingClient, renderWithProviders } from './helpers'
 
 /**
@@ -289,6 +290,111 @@ describe('sending', () => {
     // 429 is the one 4xx worth retrying. Treating it as permanent would throw away a message for
     // the crime of being typed quickly.
     expect(await screen.findByTestId('pending-message')).toBeInTheDocument()
+  })
+})
+
+describe('the sender’s own view (002 US2)', () => {
+  function typeAndSend(text: string): void {
+    fireEvent.change(screen.getByTestId('composer'), {
+      target: { value: text, selectionStart: text.length },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+  }
+
+  it('shows the message at once, marked as sending, before the server has answered', async () => {
+    // A send that never resolves: whatever is on screen is purely the optimistic bubble.
+    const sendMessage = vi.fn(() => new Promise<never>(() => undefined))
+    renderView({ client: fakeMessagingClient({ sendMessage }) })
+    await screen.findByTestId('virtuoso')
+
+    typeAndSend('instant')
+
+    // Synchronously — no findBy, no waitFor. 002 SC-002 allows 100 ms, and the only way to be sure
+    // of that in a browser is for the bubble not to wait on anything asynchronous at all.
+    const bubble = screen.getByTestId('pending-message')
+    expect(bubble).toHaveTextContent('instant')
+    expect(bubble).toHaveAttribute('data-state', 'sending')
+  })
+
+  it('becomes one sent message, never two, when the live event beats the HTTP response', async () => {
+    let resolveSend: (value: SendResult) => void = () => undefined
+    const sendMessage = vi.fn(
+      () =>
+        new Promise<SendResult>((resolve) => {
+          resolveSend = resolve
+        }),
+    )
+
+    const { rerender, client } = renderView({ client: fakeMessagingClient({ sendMessage }) })
+    await screen.findByTestId('virtuoso')
+
+    typeAndSend('raced')
+    await waitFor(() => {
+      expect(sendMessage).toHaveBeenCalled()
+    })
+
+    const calls = sendMessage.mock.calls as unknown as [string, string][]
+    const key = calls[0]?.[1] ?? ''
+    const confirmed = aMessage({ id: 'm9', seq: 9, authorId: 'e1', body: 'raced', clientMessageKey: key })
+
+    // SignalR first...
+    rerender(
+      <ConversationView
+        conversationId="c1"
+        currentEmployeeId="e1"
+        client={client}
+        connected
+        typing={[]}
+        names={{}}
+        incoming={[confirmed]}
+        kind="group"
+        historyVisibility="from_join"
+        mutedUntil={null}
+      />,
+    )
+
+    expect(screen.getAllByText('raced')).toHaveLength(1)
+    expect(screen.getByTestId('message')).toHaveAttribute('data-state', 'sent')
+
+    // ...then the HTTP response for the same message. Still one.
+    resolveSend({ message: confirmed, wasReplay: false })
+    await waitFor(() => {
+      expect(screen.queryByTestId('pending-message')).not.toBeInTheDocument()
+    })
+    expect(screen.getAllByText('raced')).toHaveLength(1)
+  })
+
+  it('shows a refused message as failed, with the reason, instead of letting it vanish', async () => {
+    const sendMessage = vi.fn(() =>
+      Promise.reject(
+        Object.assign(new Error('refused'), { status: 403, detail: 'You are no longer a member of this conversation.' }),
+      ),
+    )
+    renderView({ client: fakeMessagingClient({ sendMessage }) })
+    await screen.findByTestId('virtuoso')
+
+    typeAndSend('too late')
+
+    const failed = await screen.findByTestId('failed-message')
+    expect(failed).toHaveAttribute('data-state', 'failed')
+    expect(failed).toHaveTextContent('too late')
+    expect(failed).toHaveTextContent('You are no longer a member of this conversation.')
+
+    // Refused, not retried: a 403 stays a 403.
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets the sender dismiss a failed message', async () => {
+    const sendMessage = vi.fn(() => Promise.reject(Object.assign(new Error('refused'), { status: 422 })))
+    renderView({ client: fakeMessagingClient({ sendMessage }) })
+    await screen.findByTestId('virtuoso')
+
+    typeAndSend('bad')
+    await screen.findByTestId('failed-message')
+
+    fireEvent.click(screen.getByRole('button', { name: /dismiss/i }))
+
+    expect(screen.queryByTestId('failed-message')).not.toBeInTheDocument()
   })
 })
 

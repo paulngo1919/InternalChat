@@ -244,6 +244,13 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddScoped<IEventPublisher, Messaging.OutboxEventPublisher>();
         services.TryAddScoped<Messaging.OutboxDispatcher>();
 
+        // 002 R1 — the doorbell between a commit and the dispatcher. The signal is per process and
+        // advisory; the listener that raises it is hosted only where the dispatcher runs (Worker).
+        services.TryAddSingleton<Messaging.IOutboxWakeSignal, Messaging.OutboxWakeSignal>();
+        services.AddOptions<Messaging.OutboxListenerOptions>()
+            .Configure<IConfiguration>((options, config) =>
+                options.ConnectionString = config.GetConnectionString("Postgres") ?? string.Empty);
+
         // Singleton: it owns the AMQP channels for the process's lifetime and creates a scope per
         // delivered message internally, so it must not be scoped itself.
         //

@@ -7,7 +7,7 @@
  * thing the two share.
  */
 
-import { ApiError, type EmployeeSummary } from './client'
+import { ApiError, problemDetail, type EmployeeSummary } from './client'
 
 /** `Conversation` in openapi.yaml. */
 export interface ConversationResponse {
@@ -311,7 +311,12 @@ export function createMessagingClient(request: Authorized) {
       })
 
       if (!response.ok) {
-        throw new ApiError(response.status, `The API returned ${String(response.status)}.`)
+        // The problem detail travels with the error so a refused message can say why (002 FR-004).
+        throw new ApiError(
+          response.status,
+          `The API returned ${String(response.status)}.`,
+          await problemDetail(response),
+        )
       }
 
       return {

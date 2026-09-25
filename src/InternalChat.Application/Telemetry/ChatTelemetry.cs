@@ -75,4 +75,33 @@ public static class ChatTelemetry
         /// <summary>True when the delivery was recognised as already processed and skipped.</summary>
         public const string Duplicate = "messaging.delivery.duplicate";
     }
+
+    /// <summary>
+    /// Instrument and tag names for message delivery latency (002 data-model §6).
+    /// </summary>
+    /// <remarks>
+    /// Tags are low-cardinality by construction: an event type or a transport name, never a
+    /// conversation, message, or employee id. That is a privacy rule (Principle IV) before it is a
+    /// cardinality one — a per-conversation series would be a record of who talks to whom.
+    /// </remarks>
+    public static class Metrics
+    {
+        /// <summary>Outbox row commit to broker confirm, in milliseconds.</summary>
+        public const string OutboxLag = "chat.delivery.outbox_lag";
+
+        /// <summary>Message commit to the hub send completing, in milliseconds.</summary>
+        public const string FanoutLag = "chat.delivery.fanout_lag";
+
+        /// <summary>Send to receipt as observed by browsers, in milliseconds.</summary>
+        public const string ClientLag = "chat.delivery.client_lag";
+
+        /// <summary>Open hub connections, by negotiated transport.</summary>
+        public const string HubConnections = "chat.hub.connections";
+
+        /// <summary>Tag: the event type, e.g. <c>chat.message.sent.v1</c>.</summary>
+        public const string EventType = "event_type";
+
+        /// <summary>Tag: <c>webSockets</c> or <c>longPolling</c>.</summary>
+        public const string Transport = "transport";
+    }
 }

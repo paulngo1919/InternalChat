@@ -248,6 +248,139 @@ public sealed class OutboxTests : IntegrationTestBase, IAsyncLifetime
         Assert.Equal(0, await dispatcher.DispatchBatchAsync());
     }
 
+    [Fact]
+    public async Task Each_confirmed_row_records_its_commit_to_confirm_lag_and_failed_rows_record_none()
+    {
+        // 002 T021 — the outbox stage of FR-011. The alert on delivery latency is only as good as
+        // the stage breakdown behind it: a dispatcher that confirmed without recording would leave
+        // "is the broker slow, or the fan-out?" unanswerable during an incident.
+        DateTimeOffset occurred = DateTimeOffset.UtcNow.AddMilliseconds(-250);
+
+        await using (ChatDbContext write = CreateDbContext())
+        {
+            OutboxEventPublisher publisher = new(write);
+            await publisher.PublishAsync(new ProbeEvent(Guid.CreateVersion7(), occurred, Guid.CreateVersion7()));
+            await publisher.PublishAsync(new ProbeEvent(Guid.CreateVersion7(), occurred, Guid.CreateVersion7()));
+            await write.SaveChangesAsync();
+        }
+
+        RecordingDeliveryMetrics metrics = new();
+        await using ChatDbContext context = CreateDbContext();
+
+        OutboxDispatcher dispatcher = new(
+            context, _connectionProvider, Options.Create(_options), NullLogger<OutboxDispatcher>.Instance, metrics);
+
+        Assert.Equal(2, await dispatcher.DispatchBatchAsync());
+
+        var observations = metrics.Observations.ToList();
+        Assert.Equal(2, observations.Count);
+        Assert.All(observations, o =>
+        {
+            Assert.Equal("outbox", o.Stage);
+            Assert.Equal("chat.message.sent.direct", o.Tag);
+
+            // At least the 250 ms the row sat before dispatch; the probe's OccurredAt is the start.
+            Assert.True(o.Lag >= TimeSpan.FromMilliseconds(250), $"Recorded lag {o.Lag} is shorter than the row's age.");
+        });
+
+        // A pass that publishes nothing records nothing.
+        Assert.Equal(0, await dispatcher.DispatchBatchAsync());
+        Assert.Equal(2, metrics.Observations.Count);
+    }
+
+    [Fact]
+    public async Task A_full_batch_is_published_with_pipelined_confirms_not_one_round_trip_per_row()
+    {
+        // 002 T031 (research R2). Serial confirms cost one broker fsync per row, so a burst's batch
+        // of 100 spent most of its time waiting on the broker one message at a time — measured at
+        // 150–170 ms per 100 rows, a ceiling of about 600 rows/s against a 1,000 msg/s burst (001
+        // SC-012). Budget: 100 rows in 60 ms on the container broker.
+        await using (ChatDbContext write = CreateDbContext())
+        {
+            OutboxEventPublisher publisher = new(write);
+
+            for (int i = 0; i < 100; i++)
+            {
+                await publisher.PublishAsync(
+                    new ProbeEvent(Guid.CreateVersion7(), DateTimeOffset.UtcNow, Guid.CreateVersion7()));
+            }
+
+            await write.SaveChangesAsync();
+        }
+
+        // Warm the connection and the channel, so the measurement is the publish, not the handshake.
+        await using (ChatDbContext warm = CreateDbContext())
+        {
+            await using ChatDbContext seed = CreateDbContext();
+            await new OutboxEventPublisher(seed).PublishAsync(
+                new ProbeEvent(Guid.CreateVersion7(), DateTimeOffset.UtcNow.AddMinutes(-1), Guid.CreateVersion7()));
+            await seed.SaveChangesAsync();
+
+            RabbitMqOptions one = new()
+            {
+                Host = _options.Host, Port = _options.Port, User = _options.User, Password = _options.Password,
+                VHost = _options.VHost, DispatchBatchSize = 1,
+            };
+            await new OutboxDispatcher(warm, _connectionProvider, Options.Create(one), NullLogger<OutboxDispatcher>.Instance)
+                .DispatchBatchAsync();
+        }
+
+        await using ChatDbContext context = CreateDbContext();
+        OutboxDispatcher dispatcher = CreateDispatcher(context);
+
+        System.Diagnostics.Stopwatch elapsed = System.Diagnostics.Stopwatch.StartNew();
+        int confirmed = await dispatcher.DispatchBatchAsync();
+        elapsed.Stop();
+
+        Assert.Equal(100, confirmed);
+        Assert.True(
+            elapsed.Elapsed < TimeSpan.FromMilliseconds(60),
+            $"A 100-row batch took {elapsed.ElapsedMilliseconds} ms to publish; pipelined confirms should take under 60 ms.");
+
+        await using ChatDbContext verify = CreateDbContext();
+        Assert.Equal(0, await verify.OutboxMessages.CountAsync(m => m.DispatchedAt == null));
+    }
+
+    [Fact]
+    public async Task When_the_broker_goes_away_mid_batch_only_rows_it_confirmed_are_marked_dispatched()
+    {
+        // The R2 invariant, under failure: pipelining must not mark a row dispatched because the
+        // batch as a whole was attempted. A row is done only when its own confirm arrived.
+        await using (ChatDbContext write = CreateDbContext())
+        {
+            OutboxEventPublisher publisher = new(write);
+
+            for (int i = 0; i < 20; i++)
+            {
+                await publisher.PublishAsync(
+                    new ProbeEvent(Guid.CreateVersion7(), DateTimeOffset.UtcNow, Guid.CreateVersion7()));
+            }
+
+            await write.SaveChangesAsync();
+        }
+
+        // A routing key the exchange accepts, published to an exchange that does not exist for
+        // half the rows would be contrived; instead the broker is made unreachable for a dispatcher
+        // whose channel is already open, which is the realistic mid-batch failure.
+        RabbitMqOptions unreachable = new()
+        {
+            Host = _options.Host, Port = 1, User = _options.User, Password = _options.Password, VHost = _options.VHost,
+        };
+        await using RabbitMqConnectionProvider broken = new(Options.Create(unreachable));
+        await using ChatDbContext failContext = CreateDbContext();
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            new OutboxDispatcher(failContext, broken, Options.Create(unreachable), NullLogger<OutboxDispatcher>.Instance)
+                .DispatchBatchAsync());
+
+        await using ChatDbContext verify = CreateDbContext();
+        Assert.Equal(20, await verify.OutboxMessages.CountAsync(m => m.DispatchedAt == null));
+
+        // And the healthy dispatcher then publishes every one exactly once.
+        await using ChatDbContext retry = CreateDbContext();
+        Assert.Equal(20, await CreateDispatcher(retry).DispatchBatchAsync());
+    }
+
     private async Task<BasicGetResult?> GetAsync(string queue)
     {
         IChannel channel = await _connectionProvider.CreateChannelAsync();

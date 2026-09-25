@@ -51,10 +51,13 @@ services:
     restart: unless-stopped
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.retention.time=15d'
+      # 30 days (002 SC-009): long enough that a delay reported a few weeks later can be checked
+      # against what was measured at the time.
+      - '--storage.tsdb.retention.time=30d'
       - '--web.enable-lifecycle'
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/delivery-alerts.yml:/etc/prometheus/delivery-alerts.yml:ro
       - prometheus-data:/prometheus
     expose:
       - '9090'
@@ -110,6 +113,8 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
     volumes:
       - ./observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ./observability/grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+      - ./observability/grafana-dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
       - '${GRAFANA_PORT:-3000}:3000'

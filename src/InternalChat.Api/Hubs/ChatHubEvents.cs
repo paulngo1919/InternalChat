@@ -71,4 +71,15 @@ public static class ChatHubEvents
     /// particular person leaves — nothing a client can observe locally tells it the prompt is stale.
     /// </remarks>
     public const string MeetingEnded = nameof(MeetingEnded);
+
+    /// <summary>
+    /// The transport this connection negotiated — <c>webSockets</c> or <c>longPolling</c> — sent to
+    /// the caller once per connect (002 FR-010, hub contract 1.1.0).
+    /// </summary>
+    /// <remarks>
+    /// Needed because a proxy that strips <c>Upgrade</c> produces no error: SignalR falls back to
+    /// long polling and every message arrives a little later. Without being told, the employee sees
+    /// a chat that is merely sluggish and nobody knows why.
+    /// </remarks>
+    public const string ConnectionInfo = nameof(ConnectionInfo);
 }

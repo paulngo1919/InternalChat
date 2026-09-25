@@ -12,20 +12,38 @@
  * **Run it against a database seeded to full retention volume.** A budget verified on a thousand
  * rows is not verified — see tests/Load/README.md, which is the whole point of T108.
  *
+ * Since 002 it also measures what the employee waits for — **delivery**, not just acceptance:
+ *
+ *   | Sent message → MessageReceived on a listening hub connection | p95 300 ms | p99 500 ms |  (002 SC-001, SC-007)
+ *
+ * One listener per development user holds a real SignalR connection (JSON protocol over a raw
+ * WebSocket) for the whole run and records `now − message.sentAt` for every load probe it receives.
+ * `sentAt` is the server's clock, so run k6 on the application host (or an NTP-synced one); skew
+ * shows up directly as lag.
+ *
  * Usage:
  *   k6 run -e BASE_URL=http://localhost:8081 -e KEYCLOAK_URL=http://localhost:8082 \
  *          -e REALM=internalchat tests/Load/messaging.js
+ *
+ *   Optional: -e GROUP_CONVERSATION_ID=<id> sends the burst into that conversation instead — seed a
+ *   500-member group first (tests/Load/README.md) to measure 002 SC-003.
  */
 
 import http from 'k6/http';
 import { check, fail } from 'k6';
+import exec from 'k6/execution';
 import { Trend } from 'k6/metrics';
 import { randomSeed } from 'k6';
+import { WebSocket } from 'k6/experimental/websockets';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8081';
 const KEYCLOAK_URL = __ENV.KEYCLOAK_URL || 'http://localhost:8082';
 const REALM = __ENV.REALM || 'internalchat';
 const CLIENT_ID = __ENV.CLIENT_ID || 'internalchat-test';
+const GROUP_CONVERSATION_ID = __ENV.GROUP_CONVERSATION_ID || '';
+
+/** SignalR's record separator: every JSON-protocol frame ends with it. */
+const RS = '\x1e';
 
 /** Development roster, from deploy/keycloak/README.md. Passwords equal usernames. */
 const USERS = [
@@ -42,6 +60,9 @@ const USERS = [
 /** Separated from the built-in http metrics so a breach names the operation, not just "a request". */
 const sendAccept = new Trend('send_accept_ms', true);
 const historyPage = new Trend('history_page_ms', true);
+
+/** 002 — send to MessageReceived on another connection. Tagged by scope, so the group burst has its own threshold. */
+const deliveryLag = new Trend('delivery_lag_ms', true);
 
 export const options = {
   scenarios: {
@@ -71,6 +92,17 @@ export const options = {
       maxVUs: 2000,
       exec: 'sendMessage',
     },
+    /**
+     * 002 — one hub listener per development user for the length of the run. Constant VUs, not an
+     * arrival rate: a listener is a long-lived connection, and its measurements are the point.
+     */
+    listen_delivery: {
+      executor: 'per-vu-iterations',
+      vus: USERS.length,
+      iterations: 1,
+      maxDuration: '3m30s',
+      exec: 'listenForDelivery',
+    },
     read_history: {
       executor: 'constant-arrival-rate',
       rate: 50,
@@ -85,6 +117,11 @@ export const options = {
   thresholds: {
     'send_accept_ms': ['p(95)<150', 'p(99)<300'],
     'history_page_ms': ['p(95)<250', 'p(99)<500'],
+
+    // 002 SC-001 / SC-007, at 100 msg/s sustained. And SC-003 for the burst when it targets a
+    // 500-member group — scoped by tag so a slow burst cannot hide inside the steady numbers.
+    'delivery_lag_ms{scope:steady}': ['p(95)<300', 'p(99)<500'],
+    'delivery_lag_ms{scope:burst}': [GROUP_CONVERSATION_ID ? 'p(95)<1000' : 'p(95)<300'],
 
     // A fast p95 achieved by failing half the requests is not a pass. Kept tight rather than at
     // zero: the send endpoint is rate-limited by design (T043), and a burst legitimately produces
@@ -177,11 +214,16 @@ export function setup() {
 export function sendMessage(data) {
   const session = data.sessions[Math.floor(Math.random() * data.sessions.length)];
 
+  // The burst goes to the large group when one is given (002 SC-003); everything else to the
+  // sender's own first conversation.
+  const inBurst = exec.scenario.name === 'burst_send';
+  const conversationId = inBurst && GROUP_CONVERSATION_ID ? GROUP_CONVERSATION_ID : session.conversationId;
+
   const response = http.post(
-    `${BASE_URL}/api/v1/conversations/${session.conversationId}/messages`,
+    `${BASE_URL}/api/v1/conversations/${conversationId}/messages`,
     JSON.stringify({
       clientMessageKey: newClientMessageKey(),
-      body: `load probe ${Date.now()}`,
+      body: `load probe ${inBurst ? 'burst' : 'steady'} ${Date.now()}`,
     }),
     {
       headers: {
@@ -222,4 +264,73 @@ export function readHistory(data) {
   check(response, {
     'history returned': (r) => r.status === 200 || r.status === 429,
   });
+}
+
+/**
+ * 002 — holds one SignalR connection for the run and records delivery lag for every load probe.
+ *
+ * Speaks the JSON hub protocol directly: negotiate, open the socket with the connection token,
+ * handshake, then read `MessageReceived` invocations. Pings every 10 s, because the server drops a
+ * connection it has not heard from in 30.
+ */
+export function listenForDelivery(data) {
+  const session = data.sessions[(exec.vu.idInTest - 1) % data.sessions.length];
+
+  const negotiated = http.post(`${BASE_URL}/hubs/chat/negotiate?negotiateVersion=1`, null, {
+    headers: { Authorization: `Bearer ${session.token}` },
+    tags: { name: 'negotiate' },
+  });
+
+  if (negotiated.status !== 200) {
+    fail(`Hub negotiate failed for ${session.username} (${negotiated.status}).`);
+  }
+
+  const connectionToken = negotiated.json('connectionToken');
+  const wsBase = BASE_URL.replace(/^http/, 'ws');
+  const socket = new WebSocket(
+    `${wsBase}/hubs/chat?id=${encodeURIComponent(connectionToken)}&access_token=${encodeURIComponent(session.token)}`,
+  );
+
+  let pinger = null;
+
+  socket.addEventListener('open', () => {
+    socket.send(JSON.stringify({ protocol: 'json', version: 1 }) + RS);
+    pinger = setInterval(() => socket.send(JSON.stringify({ type: 6 }) + RS), 10000);
+  });
+
+  socket.addEventListener('message', (event) => {
+    const received = Date.now();
+
+    for (const frame of String(event.data).split(RS)) {
+      if (!frame) {
+        continue;
+      }
+
+      const message = JSON.parse(frame);
+
+      if (message.type !== 1 || message.target !== 'MessageReceived') {
+        continue;
+      }
+
+      const payload = message.arguments[0];
+
+      // Only this script's probes, and only other people's: a sender's own echo on its other
+      // connection is FR-005's concern and measured in Playwright.
+      if (!payload || typeof payload.body !== 'string' || !payload.body.startsWith('load probe ')) {
+        continue;
+      }
+
+      const scope = payload.body.startsWith('load probe burst') ? 'burst' : 'steady';
+      deliveryLag.add(received - Date.parse(payload.sentAt), { scope });
+    }
+  });
+
+  // Listen through the steady and burst scenarios, then leave cleanly.
+  setTimeout(() => {
+    if (pinger) {
+      clearInterval(pinger);
+    }
+
+    socket.close();
+  }, 3 * 60 * 1000);
 }

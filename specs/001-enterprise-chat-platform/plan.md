@@ -47,7 +47,8 @@ host runs LiveKit SFU + TURN — separate, per constitution v1.2.0.
 **Project Type**: Web application — Clean Architecture backend (4 layers plus a worker host) with a
 React SPA frontend
 
-**Performance Goals**: message send accept p95 150 ms / p99 300 ms; end-to-end delivery p95 500 ms;
+**Performance Goals**: message send accept p95 150 ms / p99 300 ms; end-to-end delivery p95 500 ms
+(tightened by 002 to p95 300 ms / p99 500 ms — `specs/002-realtime-message-delivery/plan.md`);
 history page of 50 messages p95 250 ms; search p95 800 ms; 7,000 concurrent SignalR connections;
 100 messages/second sustained with 1,000/second burst; meetings at 25 participants per room and
 1,250 concurrent participants platform-wide

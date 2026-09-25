@@ -11,14 +11,21 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { Plus, Search } from 'lucide-react'
 
-import { createMessagingClient, type MessageResponse } from '../../lib/api/messages'
+import {
+  createMessagingClient,
+  type ConversationPage,
+  type MessageResponse,
+} from '../../lib/api/messages'
 import { readHubBaseUrl } from '../../lib/auth/config'
-import { ChatConnection } from '../../lib/realtime/chatConnection'
+import { ChatConnection, type ChatTransport } from '../../lib/realtime/chatConnection'
+import { DeliveryTelemetry } from '../../lib/realtime/deliveryTelemetry'
 import { ConversationList } from '../conversations/ConversationList'
+import { applyIncomingToConversationList } from '../conversations/conversationListCache'
 import { CreateGroupForm } from '../conversations/GroupSettings'
 import { conversationsQueryKey } from '../conversations/queryKeys'
 import { SearchPanel } from '../search/SearchPanel'
 import { ConversationView } from './ConversationView'
+import { addTombstone } from './messageStore'
 
 interface ChatShellProps {
   /** Issues authorized requests. Comes from the API client so the token handling is shared. */
@@ -27,14 +34,24 @@ interface ChatShellProps {
   readonly currentEmployeeId: string
 }
 
+/** Shared so an untouched conversation does not hand ConversationView a new array every render. */
+const NO_DELETIONS: readonly string[] = []
+
 /** The messaging screen. */
 export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: ChatShellProps) {
   const [client] = useState(() => createMessagingClient(authorized))
+
+  // 002 FR-011 — what delivery felt like here, reported in aggregate once a minute.
+  const [telemetry] = useState(() => new DeliveryTelemetry(authorized))
   const queryClient = useQueryClient()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [incoming, setIncoming] = useState<readonly MessageResponse[]>([])
+  // Per conversation, bounded (messageStore.TOMBSTONE_LIMIT). Kept here, beside `incoming`, because
+  // the delete can arrive while its conversation is not the one on screen.
+  const [deleted, setDeleted] = useState<Readonly<Record<string, readonly string[]>>>({})
   const [connected, setConnected] = useState(false)
+  const [transport, setTransport] = useState<ChatTransport>('webSockets')
   const [typing, setTyping] = useState<Readonly<Record<string, readonly string[]>>>({})
 
   // Read inside the connection effect below, which is built once and must still see the currently
@@ -66,7 +83,27 @@ export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: Cha
     // open is still there when the reader switches to it. Merged by id downstream, which makes this
     // idempotent — required, because delivery is at-least-once and `Resync` re-sends deliberately.
     setIncoming((previous) => [...previous, ...messages])
-  }, [])
+
+    // 002 FR-006: the list's unread badge and preview move with the message, not with the list's
+    // next refetch. Patched in place; only a conversation the cache has never seen costs a refetch.
+    let unknownConversation = false
+    queryClient.setQueryData<ConversationPage>(conversationsQueryKey, (page) => {
+      if (page === undefined) {
+        return page
+      }
+
+      const patch = applyIncomingToConversationList(page, messages, {
+        openConversationId: selectedIdRef.current,
+        currentEmployeeId,
+      })
+      unknownConversation = patch.unknownConversation
+      return patch.page
+    })
+
+    if (unknownConversation) {
+      void queryClient.invalidateQueries({ queryKey: conversationsQueryKey, exact: true })
+    }
+  }, [currentEmployeeId, queryClient])
 
   /**
    * Opens the connection once, for the life of the screen.
@@ -86,6 +123,15 @@ export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: Cha
       onMessages: applyIncoming,
       onMessageEdited: (message) => {
         applyIncoming([message])
+      },
+      // Before 002 this event had no handler, so a colleague's deletion stayed on screen until the
+      // next reload. It also has to stick: with concurrent fan-out, the original send can arrive
+      // after the delete (hub contract 1.1.0, tombstone rule).
+      onMessageDeleted: (event) => {
+        setDeleted((previous) => ({
+          ...previous,
+          [event.conversationId]: addTombstone(previous[event.conversationId] ?? [], event.messageId),
+        }))
       },
       onTypingChanged: (event) => {
         setTyping((previous) => ({
@@ -110,7 +156,16 @@ export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: Cha
         }
       },
       onConnectionStateChanged: setConnected,
+      onTransportChanged: (next) => {
+        setTransport(next)
+        telemetry.setTransport(next)
+      },
+      onLiveMessage: (message) => {
+        telemetry.recordDelivery(message.sentAt)
+      },
     })
+
+    telemetry.start()
 
     connectionRef.current = connection
     connection.start().catch((error: Error) => {
@@ -121,9 +176,10 @@ export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: Cha
 
     return () => {
       connectionRef.current = null
+      telemetry.stop()
       void connection.stop()
     }
-  }, [applyIncoming, currentEmployeeId, getAccessToken, queryClient])
+  }, [applyIncoming, currentEmployeeId, getAccessToken, queryClient, telemetry])
 
   const startTyping = useCallback((conversationId: string) => {
     void connectionRef.current?.startTyping(conversationId)
@@ -150,6 +206,13 @@ export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: Cha
 
   return (
     <div className="chat-shell">
+      {transport !== 'webSockets' && (
+        // 002 FR-010. Non-blocking and polite: nothing is broken, but messages arrive more slowly,
+        // and the employee should hear that from the app rather than conclude chat is just slow.
+        <p className="connection-degraded" role="status" data-testid="connection-degraded">
+          Limited connection — messages may arrive more slowly.
+        </p>
+      )}
       <div className="chat-sidebar">
         <ConversationList client={client} selectedId={selectedId} onSelect={setSelectedId} />
 
@@ -217,6 +280,10 @@ export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: Cha
             typing={typing[selectedId] ?? []}
             names={{}}
             incoming={incoming}
+            deletedIds={deleted[selectedId] ?? NO_DELETIONS}
+            onSendTimed={(startedAt, finishedAt, sentAt) => {
+              telemetry.observeRoundTrip(startedAt, finishedAt, sentAt)
+            }}
             onStartTyping={startTyping}
             onStopTyping={stopTyping}
             kind={selectedConversation.data.kind}

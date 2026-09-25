@@ -74,7 +74,7 @@ export function ConversationList({ client, selectedId, onSelect }: ConversationL
               <div className="conversation-item-header">
                 <span className="conversation-title">{titleOf(conversation)}</span>
                 {conversation.unreadCount > 0 && (
-                  <span className="unread-badge" aria-label={`${String(conversation.unreadCount)} unread`}>
+                  <span className="unread-badge" data-testid="unread-count" aria-label={`${String(conversation.unreadCount)} unread`}>
                     {conversation.unreadCount}
                   </span>
                 )}

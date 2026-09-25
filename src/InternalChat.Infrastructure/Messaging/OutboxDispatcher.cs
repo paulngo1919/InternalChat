@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using InternalChat.Application.Abstractions;
 using InternalChat.Application.Telemetry;
 using InternalChat.Infrastructure.Persistence;
 using InternalChat.Infrastructure.Persistence.Outbox;
@@ -44,13 +45,26 @@ public sealed partial class OutboxDispatcher
     private readonly IRabbitMqConnectionProvider _connectionProvider;
     private readonly RabbitMqOptions _options;
     private readonly ILogger<OutboxDispatcher> _logger;
+    private readonly IDeliveryMetrics? _metrics;
+    private readonly TimeProvider _time;
 
     /// <summary>Creates the dispatcher.</summary>
+    /// <param name="context">The outbox's database context.</param>
+    /// <param name="connectionProvider">The broker connection.</param>
+    /// <param name="options">Batch size and attempt limits.</param>
+    /// <param name="logger">Logger.</param>
+    /// <param name="metrics">
+    /// Records commit-to-confirm lag per row (002 FR-011). Optional so tests that only care about
+    /// publishing need not supply one; the hosts always register it.
+    /// </param>
+    /// <param name="time">Clock for <c>dispatched_at</c> and the lag. Defaults to the system clock.</param>
     public OutboxDispatcher(
         ChatDbContext context,
         IRabbitMqConnectionProvider connectionProvider,
         IOptions<RabbitMqOptions> options,
-        ILogger<OutboxDispatcher> logger)
+        ILogger<OutboxDispatcher> logger,
+        IDeliveryMetrics? metrics = null,
+        TimeProvider? time = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(connectionProvider);
@@ -61,6 +75,8 @@ public sealed partial class OutboxDispatcher
         _connectionProvider = connectionProvider;
         _options = options.Value;
         _logger = logger;
+        _metrics = metrics;
+        _time = time ?? TimeProvider.System;
     }
 
     /// <summary>
@@ -93,47 +109,56 @@ public sealed partial class OutboxDispatcher
         }
 
         IChannel channel = await _connectionProvider
-            .CreateConfirmingChannelAsync(cancellationToken).ConfigureAwait(false);
+            .GetPublishingChannelAsync(cancellationToken).ConfigureAwait(false);
 
-        await using (channel.ConfigureAwait(false))
+        // Pipelined (002 research R2): every publish in the batch is started before any confirm is
+        // awaited, so the broker confirms them together instead of one round trip per row. Each
+        // task still completes only when the broker has confirmed that row, and a row is marked
+        // dispatched only by its own task — so a batch that half-succeeds records exactly which
+        // half, as the serial version did.
+        List<(OutboxMessage Row, Task Publish)> inFlight = new(batch.Count);
+
+        foreach (OutboxMessage row in batch)
         {
-            int confirmed = 0;
-
-            foreach (OutboxMessage row in batch)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                try
-                {
-                    await PublishAsync(channel, row, cancellationToken).ConfigureAwait(false);
-
-                    // Reached only after the broker confirmed. BasicPublishAsync on a channel
-                    // with publisher confirmations enabled does not complete until then.
-                    row.DispatchedAt = DateTimeOffset.UtcNow;
-                    row.LastError = null;
-                    confirmed++;
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    // The row stays undispatched and is retried next pass. Recording the reason
-                    // matters because a row stuck at max attempts is otherwise a silent hole:
-                    // the state change happened and nobody was ever told.
-                    row.Attempts++;
-                    row.LastError = Truncate(ex.Message, 2000);
-                    DispatchFailed(_logger, row.Id, row.Type, row.Attempts, ex);
-                }
-            }
-
-            await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-            if (confirmed > 0)
-            {
-                BatchDispatched(_logger, confirmed, batch.Count);
-            }
-
-            return confirmed;
+            cancellationToken.ThrowIfCancellationRequested();
+            inFlight.Add((row, PublishAsync(channel, row, cancellationToken)));
         }
+
+        int confirmed = 0;
+
+        foreach ((OutboxMessage row, Task publish) in inFlight)
+        {
+            try
+            {
+                await publish.ConfigureAwait(false);
+
+                DateTimeOffset now = _time.GetUtcNow();
+                row.DispatchedAt = now;
+                row.LastError = null;
+                confirmed++;
+
+                _metrics?.RecordOutboxLag(row.Type, now - row.OccurredAt);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // The row stays undispatched and is retried next pass. Recording the reason
+                // matters because a row stuck at max attempts is otherwise a silent hole:
+                // the state change happened and nobody was ever told.
+                row.Attempts++;
+                row.LastError = Truncate(ex.Message, 2000);
+                DispatchFailed(_logger, row.Id, row.Type, row.Attempts, ex);
+            }
+        }
+
+        await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        if (confirmed > 0)
+        {
+            BatchDispatched(_logger, confirmed, batch.Count);
+        }
+
+        return confirmed;
     }
 
     /// <summary>Counts rows that have exhausted their attempts and need investigation.</summary>

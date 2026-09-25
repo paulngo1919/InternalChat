@@ -132,6 +132,7 @@
 .chat-shell {
   display: flex;
   height: 100%;
+  position: relative;
 }
 
 .chat-sidebar {
@@ -359,6 +360,34 @@
   font-size: 12px;
   margin-left: 8px;
   font-style: italic;
+}
+
+/* 002 FR-004 — a message the server refused stays visible, with the reason. */
+.failed-indicator {
+  color: var(--danger);
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+.message-row[data-state='failed'] .message-bubble {
+  border: 1px solid var(--danger);
+  background: var(--danger-transparent);
+}
+
+/* 002 FR-010 — non-blocking notice that the connection fell back from WebSockets. */
+.connection-degraded {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
 }
 
 /* Composer */

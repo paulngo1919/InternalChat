@@ -17,11 +17,27 @@ import { ImagePreview } from '../attachments/ImagePreview'
 import type { AttachmentResponse, MessageResponse } from '../../lib/api/messages'
 import type { QueuedMessage } from '../../lib/messages/offlineQueue'
 
+/**
+ * A send the server refused in a way retrying cannot fix (002 FR-004, US2 scenario 3).
+ *
+ * Kept on screen with the reason rather than dropped: before 002 a refused message simply vanished,
+ * and the sender had no way to know it was never delivered.
+ */
+export interface FailedMessage {
+  readonly clientMessageKey: string
+  readonly body: string
+  readonly reason: string
+}
+
 interface MessageListProps {
   /** Confirmed messages, ascending by `seq`. */
   readonly messages: readonly MessageResponse[]
   /** Sends accepted by the composer but not yet acknowledged, rendered after the confirmed ones. */
   readonly pending: readonly QueuedMessage[]
+  /** Sends the server refused, shown after the pending ones with the reason. */
+  readonly failed?: readonly FailedMessage[]
+  /** Removes a failed send from view. */
+  readonly onDismissFailed?: (clientMessageKey: string) => void
   readonly currentEmployeeId: string
   /** Asks for an older page. Called when the reader reaches the top (FR-013). */
   readonly onLoadOlder: () => void
@@ -35,10 +51,15 @@ interface MessageListProps {
   readonly refreshAttachment?: ((attachmentId: string) => Promise<AttachmentResponse>) | undefined
 }
 
-/** One row: either a confirmed message or a still-sending one. */
+/** One row: a confirmed message, a still-sending one, or one the server refused. */
 type Row =
   | { readonly kind: 'message'; readonly key: string; readonly message: MessageResponse }
   | { readonly kind: 'pending'; readonly key: string; readonly message: QueuedMessage }
+  | { readonly kind: 'failed'; readonly key: string; readonly message: FailedMessage }
+
+/** What the sender is told about a row: `data-state` and the test id both follow from it. */
+const STATE = { message: 'sent', pending: 'sending', failed: 'failed' } as const
+const TEST_ID = { message: 'message', pending: 'pending-message', failed: 'failed-message' } as const
 
 /** A deleted message renders as a tombstone, never as an empty bubble. */
 function MessageBody({
@@ -72,10 +93,19 @@ function MessageBody({
   )
 }
 
+/** Keeps the newest message off the bottom edge. Module-level so Virtuoso does not remount it. */
+function ListFooter() {
+  return <div aria-hidden="true" style={{ height: 10 }} />
+}
+
+const VIRTUOSO_COMPONENTS = { Footer: ListFooter }
+
 /** The transcript, virtualized and ordered by server sequence. */
 export function MessageList({
   messages,
   pending,
+  failed = [],
+  onDismissFailed,
   currentEmployeeId,
   onLoadOlder,
   hasOlder,
@@ -97,12 +127,24 @@ export function MessageList({
       key: message.clientMessageKey,
       message,
     })),
+
+    // Refused sends last of all. Their key is prefixed so a refused message can never collide with
+    // a pending one carrying the same clientMessageKey during the render the refusal arrives in.
+    ...failed.map((message): Row => ({
+      kind: 'failed',
+      key: `failed:${message.clientMessageKey}`,
+      message,
+    })),
   ]
 
   return (
     <Virtuoso
       style={{ flex: 1, overflowX: 'hidden' }}
       data={rows}
+      // Space under the last message. A Footer rather than CSS on .virtuoso-item-list: Virtuoso
+      // owns that element's padding (inline, it stands in for rows scrolled out of view), so
+      // overriding it would throw off the scroll position.
+      components={VIRTUOSO_COMPONENTS}
       // Anchors the view to the newest message and keeps it there as messages arrive — unless the
       // reader has scrolled up, in which case it leaves them where they are. Yanking somebody back
       // to the bottom mid-read is the single most irritating thing a chat list can do.
@@ -127,16 +169,38 @@ export function MessageList({
         return (
           <article
             className={`message-row ${mine ? 'message-mine' : 'message-theirs'}`}
-            data-testid={row.kind === 'pending' ? 'pending-message' : 'message'}
+            data-testid={TEST_ID[row.kind]}
+            data-state={STATE[row.kind]}
             data-mine={mine}
           >
             <div className="message-bubble">
-              {row.kind === 'message' ? (
+              {row.kind === 'message' && (
                 <MessageBody message={row.message} refreshAttachment={refreshAttachment} />
-              ) : (
+              )}
+              {row.kind === 'pending' && (
                 <>
                   <span>{row.message.body}</span>
                   <small className="pending-indicator" aria-live="polite"> Sending…</small>
+                </>
+              )}
+              {row.kind === 'failed' && (
+                <>
+                  <span>{row.message.body}</span>
+                  <small className="failed-indicator" role="alert">
+                    {' '}
+                    Not sent — {row.message.reason}
+                  </small>
+                  {onDismissFailed && (
+                    <button
+                      type="button"
+                      className="btn-link"
+                      onClick={() => {
+                        onDismissFailed(row.message.clientMessageKey)
+                      }}
+                    >
+                      Dismiss
+                    </button>
+                  )}
                 </>
               )}
             </div>

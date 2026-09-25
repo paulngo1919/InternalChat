@@ -2,7 +2,12 @@
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
 
-**Active plan**: `specs/001-enterprise-chat-platform/plan.md`
+**Active plan**: `specs/002-realtime-message-delivery/plan.md` — instant message delivery
+(outbox wake-on-commit, pipelined publish, parallel fan-out, delivery-latency gates). Supporting
+artifacts in the same directory: `research.md` (as-built latency analysis R0 + decisions R1–R7),
+`data-model.md`, `contracts/` (hub 1.1.0 delta, messaging delta, telemetry endpoint), `quickstart.md`.
+
+**Base plan** (stack, structure, and all product scope): `specs/001-enterprise-chat-platform/plan.md`
 
 Supporting artifacts in the same directory:
 

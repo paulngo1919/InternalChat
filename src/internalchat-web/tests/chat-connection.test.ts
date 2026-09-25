@@ -36,7 +36,7 @@ const mock: { connection: MockConnection | null } = { connection: null }
 
 vi.mock('@microsoft/signalr', () => {
   const HttpTransportType = { WebSockets: 1, LongPolling: 4 }
-  const HubConnectionState = { Disconnected: 0, Connected: 1 }
+  const HubConnectionState = { Disconnected: 0, Connected: 1, Reconnecting: 2 }
   const LogLevel = { Warning: 3 }
 
   class HubConnectionBuilder {
@@ -403,5 +403,73 @@ describe('ephemeral signals', () => {
     // something that fixes itself in ten seconds when the TTL expires.
     await expect(connection.startTyping('c1')).resolves.toBeUndefined()
     await expect(connection.setPresence('dnd')).resolves.toBeUndefined()
+  })
+})
+
+describe('002 — transport and reconnect latency', () => {
+  it('reports the transport the server negotiated', async () => {
+    const transports: string[] = []
+    const { connection, hub } = build({ onTransportChanged: (t) => transports.push(t) })
+
+    await connection.start()
+
+    // Registered before start, so the event the server sends first is not missed.
+    expect(hub().handlers.has(ChatEvents.ConnectionInfo)).toBe(true)
+
+    hub().handlers.get(ChatEvents.ConnectionInfo)?.({ transport: 'longPolling' })
+    hub().handlers.get(ChatEvents.ConnectionInfo)?.({ transport: 'webSockets' })
+
+    expect(transports).toEqual(['longPolling', 'webSockets'])
+  })
+
+  it('reconnects at once when the browser comes back online mid-backoff (002 SC-004)', async () => {
+    // After a few minutes offline the retry schedule is at 30 s. Waiting it out after the network
+    // returns would leave the employee on a dead connection for up to half a minute.
+    const { connection, hub, states } = build()
+    await connection.start()
+
+    hub().state = 2 // Reconnecting
+    hub().lifecycle.get('reconnecting')?.()
+    hub().start.mockClear()
+    hub().invoke.mockClear()
+
+    window.dispatchEvent(new Event('online'))
+
+    await vi.waitFor(() => {
+      expect(hub().start).toHaveBeenCalledTimes(1)
+    })
+    expect(hub().stop).toHaveBeenCalled()
+
+    // Reconnected means caught up: the gap is closed by Resync, as on any reconnect.
+    await vi.waitFor(() => {
+      expect(hub().invoke).toHaveBeenCalledWith('Resync', { c1: 7 })
+    })
+    expect(states.at(-1)).toBe(true)
+
+    await connection.stop()
+  })
+
+  it('ignores the online event while already connected', async () => {
+    const { connection, hub } = build()
+    await connection.start()
+    hub().start.mockClear()
+
+    window.dispatchEvent(new Event('online'))
+    await Promise.resolve()
+
+    expect(hub().start).not.toHaveBeenCalled()
+    await connection.stop()
+  })
+
+  it('stops listening once stopped, so an unmounted screen never reconnects', async () => {
+    const { connection, hub } = build()
+    await connection.start()
+    await connection.stop()
+    hub().start.mockClear()
+
+    window.dispatchEvent(new Event('online'))
+    await Promise.resolve()
+
+    expect(hub().start).not.toHaveBeenCalled()
   })
 })

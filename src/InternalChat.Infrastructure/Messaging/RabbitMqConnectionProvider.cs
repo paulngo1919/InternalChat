@@ -17,6 +17,18 @@ public interface IRabbitMqConnectionProvider : IAsyncDisposable
 
     /// <summary>Opens a plain channel for consuming.</summary>
     Task<IChannel> CreateChannelAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Opens a consuming channel whose handlers may run up to <paramref name="dispatchConcurrency"/>
+    /// at a time (002 research R3).
+    /// </summary>
+    Task<IChannel> CreateChannelAsync(ushort dispatchConcurrency, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The process's long-lived publishing channel: confirmations tracked, and many publishes allowed
+    /// in flight at once (002 research R2). Reopened transparently if the broker closed it.
+    /// </summary>
+    Task<IChannel> GetPublishingChannelAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -29,16 +41,23 @@ public interface IRabbitMqConnectionProvider : IAsyncDisposable
 /// exhausts sockets under load, which at 100 messages/second arrives quickly.
 /// </para>
 /// <para>
-/// Channels, by contrast, are <em>not</em> thread-safe and must not be shared across concurrent
-/// operations — hence a channel per dispatcher pass and per consumer rather than one cached
-/// channel.
+/// Channels are cheap but not free: opening one is a broker round trip plus confirm-select. Consumers
+/// get a channel each. Publishing shares one long-lived channel (002 research R2), created with
+/// publisher-confirmation tracking and an outstanding-confirm limit — the configuration under which
+/// RabbitMQ.Client 7 supports concurrent publishes on one channel, and the one that lets a batch be
+/// pipelined instead of waiting out a confirm per row.
 /// </para>
 /// </remarks>
 public sealed class RabbitMqConnectionProvider : IRabbitMqConnectionProvider
 {
+    /// <summary>Publishes allowed in flight on the publishing channel before a publish waits.</summary>
+    private const int MaxOutstandingConfirms = 256;
+
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly SemaphoreSlim _publishingGate = new(1, 1);
     private readonly ConnectionFactory _factory;
     private IConnection? _connection;
+    private IChannel? _publishing;
     private bool _disposed;
 
     /// <summary>Creates the provider.</summary>
@@ -111,6 +130,62 @@ public sealed class RabbitMqConnectionProvider : IRabbitMqConnectionProvider
     }
 
     /// <inheritdoc />
+    public async Task<IChannel> CreateChannelAsync(ushort dispatchConcurrency, CancellationToken cancellationToken = default)
+    {
+        IConnection connection = await GetConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        CreateChannelOptions options = new(
+            publisherConfirmationsEnabled: false,
+            publisherConfirmationTrackingEnabled: false,
+            consumerDispatchConcurrency: Math.Max((ushort)1, dispatchConcurrency));
+
+        return await connection.CreateChannelAsync(options, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<IChannel> GetPublishingChannelAsync(CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (_publishing is { IsOpen: true })
+        {
+            return _publishing;
+        }
+
+        await _publishingGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            if (_publishing is { IsOpen: true })
+            {
+                return _publishing;
+            }
+
+            if (_publishing is not null)
+            {
+                await _publishing.DisposeAsync().ConfigureAwait(false);
+            }
+
+            IConnection connection = await GetConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+            // Tracking on, so each publish still completes only when the broker confirms that
+            // message — the dispatcher's "never marked before confirmed" rule is per row, not per
+            // batch. The limiter bounds how many are outstanding at once.
+            CreateChannelOptions options = new(
+                publisherConfirmationsEnabled: true,
+                publisherConfirmationTrackingEnabled: true,
+                outstandingPublisherConfirmationsRateLimiter: new ThrottlingRateLimiter(MaxOutstandingConfirms));
+
+            _publishing = await connection.CreateChannelAsync(options, cancellationToken).ConfigureAwait(false);
+            return _publishing;
+        }
+        finally
+        {
+            _publishingGate.Release();
+        }
+    }
+
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         if (_disposed)
@@ -120,11 +195,17 @@ public sealed class RabbitMqConnectionProvider : IRabbitMqConnectionProvider
 
         _disposed = true;
 
+        if (_publishing is not null)
+        {
+            await _publishing.DisposeAsync().ConfigureAwait(false);
+        }
+
         if (_connection is not null)
         {
             await _connection.DisposeAsync().ConfigureAwait(false);
         }
 
         _gate.Dispose();
+        _publishingGate.Dispose();
     }
 }

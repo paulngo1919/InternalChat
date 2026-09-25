@@ -78,7 +78,15 @@ public sealed partial class ConsumerHost : IAsyncDisposable
                 $"'{consumer.QueueName}' is not declared in ChatTopology.Queues. A consumer on an "
                 + "undeclared queue would receive nothing and fail silently.");
 
-        IChannel channel = await _connectionProvider.CreateChannelAsync(cancellationToken).ConfigureAwait(false);
+        // Per-queue dispatch concurrency (002 research R3). realtime.fanout may be overridden by
+        // configuration; every other queue keeps what the topology declares, which is serial.
+        ushort concurrency = string.Equals(definition.Name, "realtime.fanout", StringComparison.Ordinal)
+            ? (ushort)Math.Clamp(_options.FanoutConsumerConcurrency, 1, definition.PrefetchCount)
+            : definition.Concurrency;
+
+        IChannel channel = await _connectionProvider
+            .CreateChannelAsync(concurrency, cancellationToken)
+            .ConfigureAwait(false);
         _channels.Add(channel);
 
         // Bound in-flight work. Without a prefetch limit the broker pushes the whole queue at
@@ -96,7 +104,7 @@ public sealed partial class ConsumerHost : IAsyncDisposable
             consumer: eventingConsumer,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        ConsumerStarted(_logger, consumer.QueueName, definition.PrefetchCount);
+        ConsumerStarted(_logger, consumer.QueueName, definition.PrefetchCount, concurrency);
     }
 
     /// <summary>
@@ -352,8 +360,8 @@ public sealed partial class ConsumerHost : IAsyncDisposable
         }
     }
 
-    [LoggerMessage(EventId = 2100, Level = LogLevel.Information, Message = "Consuming {Queue} with prefetch {Prefetch}")]
-    private static partial void ConsumerStarted(ILogger logger, string queue, ushort prefetch);
+    [LoggerMessage(EventId = 2100, Level = LogLevel.Information, Message = "Consuming {Queue} with prefetch {Prefetch}, concurrency {Concurrency}")]
+    private static partial void ConsumerStarted(ILogger logger, string queue, ushort prefetch, ushort concurrency);
 
     [LoggerMessage(EventId = 2101, Level = LogLevel.Debug, Message = "{Queue} skipped already-processed message {MessageId}")]
     private static partial void DuplicateSkipped(ILogger logger, string queue, Guid messageId);

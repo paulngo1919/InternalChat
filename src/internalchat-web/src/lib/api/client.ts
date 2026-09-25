@@ -11,10 +11,27 @@ export class ApiError extends Error {
   /** HTTP status the API returned. */
   readonly status: number
 
-  constructor(status: number, message: string) {
+  /**
+   * The problem document's `detail`, when the API sent one — the reason worth showing a person, as
+   * opposed to `message`, which only names the status (002 FR-004).
+   */
+  readonly detail: string | undefined
+
+  constructor(status: number, message: string, detail?: string) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.detail = detail
+  }
+}
+
+/** Reads `detail` from an RFC 7807 problem response, or nothing if the body is not one. */
+export async function problemDetail(response: Response): Promise<string | undefined> {
+  try {
+    const problem = (await response.json()) as { detail?: unknown }
+    return typeof problem.detail === 'string' && problem.detail.length > 0 ? problem.detail : undefined
+  } catch {
+    return undefined
   }
 }
 

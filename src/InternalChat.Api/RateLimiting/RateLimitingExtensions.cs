@@ -21,6 +21,9 @@ public static class RateLimitPolicies
 
     /// <summary>Attachment upload reservation.</summary>
     public const string Upload = "upload";
+
+    /// <summary>Client delivery-lag reports (002 FR-011). The client sends at most one a minute.</summary>
+    public const string Telemetry = "telemetry";
 }
 
 /// <summary>
@@ -71,6 +74,19 @@ public static class RateLimitingExtensions
                     },
                     cancellationToken).ConfigureAwait(false);
             };
+
+            // 002 — a browser reports at most once a minute; two per minute leaves room for a
+            // reconnect flushing early, and nothing more. No queue: a dropped report is the
+            // intended outcome, and the client never retries it.
+            options.AddPolicy(RateLimitPolicies.Telemetry, httpContext =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: UserOrIp(httpContext),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 2,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0,
+                    }));
 
             // Authentication is limited hardest and always by IP: the caller is by definition
             // not yet authenticated, so there is no user to attribute the attempt to.

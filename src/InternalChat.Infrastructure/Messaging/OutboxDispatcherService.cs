@@ -18,10 +18,17 @@ namespace InternalChat.Infrastructure.Messaging;
 /// table that nothing drained.
 /// </para>
 /// <para>
-/// <b>Adaptive polling, not a fixed interval.</b> A full batch means there is probably more, so the
-/// loop goes straight round again; an empty batch waits. A fixed one-second interval would add up to
-/// a second of latency to every message on an idle platform, against a 500 ms end-to-end delivery
-/// budget — and would poll pointlessly all night.
+/// <b>Woken on commit, not polled.</b> A full batch means there is probably more, so the loop goes
+/// straight round again. A partial batch means the table is drained, and the loop waits on
+/// <see cref="IOutboxWakeSignal"/> — which <see cref="OutboxNotificationListener"/> raises as soon
+/// as a transaction commits outbox rows (002 research R1). The wait also times out after
+/// <see cref="RabbitMqOptions.IdlePollInterval"/>, a backstop that drains the table even if a
+/// notification is lost.
+/// </para>
+/// <para>
+/// This replaced a fixed one-second sleep after every partial batch. On a normally loaded platform
+/// that is almost every batch, so each message waited for the rest of the current second before it
+/// was even published — a mean of half a second, which employees saw as chat that lagged (002 R0).
 /// </para>
 /// <para>
 /// A failed batch is logged and retried on the next tick rather than thrown. An unhandled exception
@@ -33,20 +40,24 @@ namespace InternalChat.Infrastructure.Messaging;
 public sealed partial class OutboxDispatcherService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopes;
+    private readonly IOutboxWakeSignal _signal;
     private readonly RabbitMqOptions _options;
     private readonly ILogger<OutboxDispatcherService> _logger;
 
     /// <summary>Creates the service.</summary>
     public OutboxDispatcherService(
         IServiceScopeFactory scopes,
+        IOutboxWakeSignal signal,
         IOptions<RabbitMqOptions> options,
         ILogger<OutboxDispatcherService> logger)
     {
         ArgumentNullException.ThrowIfNull(scopes);
+        ArgumentNullException.ThrowIfNull(signal);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
         _scopes = scopes;
+        _signal = signal;
         _options = options.Value;
         _logger = logger;
     }
@@ -80,8 +91,16 @@ public sealed partial class OutboxDispatcherService : BackgroundService
 
             if (dispatched < _options.DispatchBatchSize)
             {
-                // Not a full batch, so the table is drained for now. Wait before asking again.
-                await SafeDelayAsync(_options.IdlePollInterval, stoppingToken).ConfigureAwait(false);
+                // Not a full batch, so the table is drained for now. Wait for the next commit to
+                // ring, or for the backstop poll if a ring was lost.
+                try
+                {
+                    await _signal.WaitAsync(_options.IdlePollInterval, stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
             }
         }
     }
@@ -116,7 +135,7 @@ public sealed partial class OutboxDispatcherService : BackgroundService
     [LoggerMessage(
         EventId = 2100,
         Level = LogLevel.Information,
-        Message = "Outbox dispatcher started: batches of {BatchSize}, idle poll {IdleInterval}")]
+        Message = "Outbox dispatcher started: batches of {BatchSize}, woken on commit, backstop poll {IdleInterval}")]
     private static partial void Started(ILogger logger, int batchSize, TimeSpan idleInterval);
 
     [LoggerMessage(

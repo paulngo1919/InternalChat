@@ -8,6 +8,8 @@
  * deleted or was simply never visible to them.
  */
 
+import { Info } from 'lucide-react'
+
 interface HistoryNoticeProps {
   readonly historyVisibility: 'from_join' | 'full'
 }
@@ -15,10 +17,13 @@ interface HistoryNoticeProps {
 /** A one-line, plain-language statement of what a member of this conversation can see. */
 export function HistoryNotice({ historyVisibility }: HistoryNoticeProps) {
   return (
-    <p role="note" data-testid="history-notice">
-      {historyVisibility === 'full'
-        ? 'New members can see the full history of this conversation, including messages sent before they joined.'
-        : 'New members only see messages sent after they joined this conversation.'}
-    </p>
+    <div role="note" data-testid="history-notice" className="chat-notice-banner">
+      <Info size={16} className="shrink-0" />
+      <p>
+        {historyVisibility === 'full'
+          ? 'New members can see the full history of this conversation, including messages sent before they joined.'
+          : 'New members only see messages sent after they joined this conversation.'}
+      </p>
+    </div>
   )
 }

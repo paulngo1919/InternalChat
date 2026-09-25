@@ -44,6 +44,11 @@ builder.Services.AddScoped<InternalChat.Worker.Consumers.AttachmentScanConsumer>
 builder.Services.AddScoped<IMessageConsumer>(
     sp => sp.GetRequiredService<InternalChat.Worker.Consumers.AttachmentScanConsumer>());
 
+// T209 — processes export requests, writes JSON to MinIO, and records the outcome (FR-055).
+builder.Services.AddScoped<InternalChat.Worker.Jobs.ExportJob>();
+builder.Services.AddScoped<IMessageConsumer>(
+    sp => sp.GetRequiredService<InternalChat.Worker.Jobs.ExportJob>());
+
 builder.Services.AddHostedService<InternalChat.Infrastructure.Messaging.QueueConsumerService>();
 
 // The outbox drain. Nothing reaches RabbitMQ without it — every real-time delivery, notification,
@@ -56,6 +61,9 @@ builder.Services.AddHostedService<InternalChat.Infrastructure.Messaging.OutboxDi
 // month with no partition fails outright rather than falling back to the parent, so a boundary
 // crossed without a partition ready rejects every send on the platform.
 builder.Services.AddHostedService<InternalChat.Worker.Jobs.PartitionMaintenanceJob>();
+
+// T210 — sweeps orphaned objects and abandoned uploads.
+builder.Services.AddHostedService<InternalChat.Worker.Jobs.OrphanReclaimJob>();
 
 // Batches a returning employee's backlog into one summary rather than a burst of individual
 // pushes (T135, FR-038). Reads the same per-employee cooldown key NotificationFanoutConsumer

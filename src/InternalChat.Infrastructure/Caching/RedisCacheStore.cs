@@ -57,26 +57,33 @@ public sealed class RedisCacheStore : ICacheStore
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        RedisValue value = await _redis.GetDatabase()
-            .StringGetAsync(Qualify(key))
-            .ConfigureAwait(false);
+        try
+        {
+            RedisValue value = await _redis.GetDatabase()
+                .StringGetAsync(Qualify(key))
+                .ConfigureAwait(false);
 
-        if (value.IsNullOrEmpty)
+            if (value.IsNullOrEmpty)
+            {
+                return null;
+            }
+
+            try
+            {
+                return JsonSerializer.Deserialize<T>(value.ToString(), SerializerOptions);
+            }
+            catch (JsonException)
+            {
+                await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+                return null;
+            }
+        }
+        catch (RedisConnectionException)
         {
             return null;
         }
-
-        // A cache entry that no longer deserializes — because the type changed shape between
-        // deploys — is treated as a miss rather than an error. The authoritative row is in
-        // PostgreSQL, so a miss is always safe; throwing would turn a rolling deploy into an
-        // outage.
-        try
+        catch (RedisTimeoutException)
         {
-            return JsonSerializer.Deserialize<T>(value.ToString(), SerializerOptions);
-        }
-        catch (JsonException)
-        {
-            await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
             return null;
         }
     }
@@ -97,9 +104,20 @@ public sealed class RedisCacheStore : ICacheStore
 
         string payload = JsonSerializer.Serialize(value, SerializerOptions);
 
-        await _redis.GetDatabase()
-            .StringSetAsync(Qualify(key), payload, timeToLive)
-            .ConfigureAwait(false);
+        try
+        {
+            await _redis.GetDatabase()
+                .StringSetAsync(Qualify(key), payload, timeToLive)
+                .ConfigureAwait(false);
+        }
+        catch (RedisConnectionException)
+        {
+            // Transient outage; swallow and degrade gracefully.
+        }
+        catch (RedisTimeoutException)
+        {
+            // Transient outage; swallow and degrade gracefully.
+        }
     }
 
     /// <inheritdoc />
@@ -108,7 +126,16 @@ public sealed class RedisCacheStore : ICacheStore
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await _redis.GetDatabase().KeyDeleteAsync(Qualify(key)).ConfigureAwait(false);
+        try
+        {
+            await _redis.GetDatabase().KeyDeleteAsync(Qualify(key)).ConfigureAwait(false);
+        }
+        catch (RedisConnectionException)
+        {
+        }
+        catch (RedisTimeoutException)
+        {
+        }
     }
 
     /// <inheritdoc />
@@ -120,24 +147,33 @@ public sealed class RedisCacheStore : ICacheStore
         IDatabase database = _redis.GetDatabase();
         RedisValue pattern = $"{_keyPrefix}{keyPrefix}*";
 
-        foreach (System.Net.EndPoint endpoint in _redis.GetEndPoints())
+        try
         {
-            IServer server = _redis.GetServer(endpoint);
-
-            if (server.IsReplica)
+            foreach (System.Net.EndPoint endpoint in _redis.GetEndPoints())
             {
-                continue;
-            }
+                IServer server = _redis.GetServer(endpoint);
 
-            // KeysAsync uses SCAN under the hood, not KEYS. KEYS blocks the single-threaded
-            // server for the whole sweep, which on a busy instance stalls every other request —
-            // including the membership lookups on the message-delivery path.
-            await foreach (RedisKey redisKey in server.KeysAsync(pattern: pattern, pageSize: 250)
-                               .WithCancellation(cancellationToken)
-                               .ConfigureAwait(false))
-            {
-                await database.KeyDeleteAsync(redisKey).ConfigureAwait(false);
+                if (server.IsReplica)
+                {
+                    continue;
+                }
+
+                // KeysAsync uses SCAN under the hood, not KEYS. KEYS blocks the single-threaded
+                // server for the whole sweep, which on a busy instance stalls every other request —
+                // including the membership lookups on the message-delivery path.
+                await foreach (RedisKey redisKey in server.KeysAsync(pattern: pattern, pageSize: 250)
+                                   .WithCancellation(cancellationToken)
+                                   .ConfigureAwait(false))
+                {
+                    await database.KeyDeleteAsync(redisKey).ConfigureAwait(false);
+                }
             }
+        }
+        catch (RedisConnectionException)
+        {
+        }
+        catch (RedisTimeoutException)
+        {
         }
     }
 

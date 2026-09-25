@@ -58,30 +58,32 @@ export function ConversationList({ client, selectedId, onSelect }: ConversationL
   }
 
   return (
-    <nav aria-label="Conversations">
-      <ul>
+    <nav aria-label="Conversations" className="conversation-list-container">
+      <ul className="conversation-list">
         {data.items.map((conversation) => (
           <li key={conversation.id}>
             <button
               type="button"
+              className={`conversation-item ${conversation.id === selectedId ? 'active' : ''}`}
               onClick={() => {
                 onSelect(conversation.id)
               }}
-              // aria-current rather than a class alone: a sighted user sees the highlight, and a
-              // screen-reader user is told which conversation is open (WCAG 2.1 AA, T215).
               aria-current={conversation.id === selectedId ? 'true' : undefined}
               data-testid="conversation-item"
             >
-              <span>{titleOf(conversation)}</span>
-
-              {conversation.unreadCount > 0 && (
-                <span aria-label={`${String(conversation.unreadCount)} unread`}>
-                  {conversation.unreadCount}
-                </span>
-              )}
+              <div className="conversation-item-header">
+                <span className="conversation-title">{titleOf(conversation)}</span>
+                {conversation.unreadCount > 0 && (
+                  <span className="unread-badge" aria-label={`${String(conversation.unreadCount)} unread`}>
+                    {conversation.unreadCount}
+                  </span>
+                )}
+              </div>
 
               {conversation.lastMessage?.body && (
-                <span data-testid="conversation-preview">{conversation.lastMessage.body}</span>
+                <span className="conversation-preview" data-testid="conversation-preview">
+                  {conversation.lastMessage.body}
+                </span>
               )}
             </button>
           </li>

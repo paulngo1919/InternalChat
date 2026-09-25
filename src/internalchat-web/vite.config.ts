@@ -127,6 +127,10 @@ function bundleBudget(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig({
+  server: {
+    port: 8080,
+    strictPort: true
+  },
   plugins: [react(), bundleBudget()],
   build: {
     rollupOptions: {

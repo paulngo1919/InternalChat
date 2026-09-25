@@ -4,6 +4,11 @@
     Constitution Principle I: Infrastructure implements Application's interfaces and is
     referenced by nobody except the composition roots (Api, Worker) for DI registration.
   -->
+  <PropertyGroup>
+    <!-- Suppress analyzer warnings on auto-generated EF Migrations -->
+    <NoWarn>$(NoWarn);CA1861</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\InternalChat.Application\InternalChat.Application.csproj" />
   </ItemGroup>

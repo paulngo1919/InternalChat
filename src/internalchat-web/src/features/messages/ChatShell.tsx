@@ -9,7 +9,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
+import { Plus, Search } from 'lucide-react'
+
 import { createMessagingClient, type MessageResponse } from '../../lib/api/messages'
+import { readHubBaseUrl } from '../../lib/auth/config'
 import { ChatConnection } from '../../lib/realtime/chatConnection'
 import { ConversationList } from '../conversations/ConversationList'
 import { CreateGroupForm } from '../conversations/GroupSettings'
@@ -77,7 +80,7 @@ export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: Cha
    */
   useEffect(() => {
     const connection = new ChatConnection({
-      url: '/hubs/chat',
+      url: readHubBaseUrl(import.meta.env),
       accessTokenFactory: getAccessToken,
       lastSeenSeq: () => ({ ...lastSeen.current }),
       onMessages: applyIncoming,
@@ -110,7 +113,11 @@ export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: Cha
     })
 
     connectionRef.current = connection
-    void connection.start()
+    connection.start().catch((error: Error) => {
+      if (error.name !== 'AbortError' && !error.message?.includes('stopped during negotiation')) {
+        console.error('SignalR connection failed:', error)
+      }
+    })
 
     return () => {
       connectionRef.current = null
@@ -142,69 +149,82 @@ export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: Cha
   })
 
   return (
-    <div>
-      <ConversationList client={client} selectedId={selectedId} onSelect={setSelectedId} />
+    <div className="chat-shell">
+      <div className="chat-sidebar">
+        <ConversationList client={client} selectedId={selectedId} onSelect={setSelectedId} />
 
-      <button
-        type="button"
-        onClick={() => {
-          setCreatingGroup((value) => !value)
-        }}
-      >
-        {creatingGroup ? 'Cancel' : 'New group'}
-      </button>
+        <div className="sidebar-actions">
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => {
+              setCreatingGroup((value) => {
+                if (!value) setSearching(false)
+                return !value
+              })
+            }}
+          >
+            {creatingGroup ? 'Cancel' : <><Plus size={16} /> New group</>}
+          </button>
 
-      <button
-        type="button"
-        onClick={() => {
-          setSearching((value) => !value)
-        }}
-        aria-pressed={searching}
-      >
-        {searching ? 'Close search' : 'Search'}
-      </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              setSearching((value) => {
+                if (!value) setCreatingGroup(false)
+                return !value
+              })
+            }}
+            aria-pressed={searching}
+          >
+            {searching ? 'Close search' : <><Search size={16} /> Search</>}
+          </button>
+        </div>
 
-      {searching && (
-        <SearchPanel
-          api={client}
-          onJumpTo={(conversationId) => {
-            // Opens the conversation. Scrolling to the exact sequence is the transcript's job
-            // and needs an anchor the virtualizer owns; opening the right conversation is the
-            // half that can be done from here, and is what FR-031 asks for first.
-            setSelectedId(conversationId)
-            setSearching(false)
-          }}
-        />
-      )}
+        {searching && (
+          <SearchPanel
+            api={client}
+            onJumpTo={(conversationId) => {
+              setSelectedId(conversationId)
+              setSearching(false)
+            }}
+          />
+        )}
 
-      {creatingGroup && (
-        <CreateGroupForm
-          client={client}
-          onCreated={(conversationId) => {
-            setCreatingGroup(false)
-            setSelectedId(conversationId)
-          }}
-        />
-      )}
+        {creatingGroup && (
+          <CreateGroupForm
+            client={client}
+            onCreated={(conversationId) => {
+              setCreatingGroup(false)
+              setSelectedId(conversationId)
+            }}
+          />
+        )}
+      </div>
 
-      {selectedId === null || !selectedConversation.data ? (
-        <p>Choose a conversation.</p>
-      ) : (
-        <ConversationView
-          conversationId={selectedId}
-          currentEmployeeId={currentEmployeeId}
-          client={client}
-          connected={connected}
-          typing={typing[selectedId] ?? []}
-          names={{}}
-          incoming={incoming}
-          onStartTyping={startTyping}
-          onStopTyping={stopTyping}
-          kind={selectedConversation.data.kind}
-          historyVisibility={selectedConversation.data.historyVisibility}
-          mutedUntil={selectedConversation.data.mutedUntil}
-        />
-      )}
+      <div className="chat-main">
+        {selectedId === null || !selectedConversation.data ? (
+          <div className="empty-state">
+            <p>Choose a conversation to start chatting.</p>
+          </div>
+        ) : (
+          <ConversationView
+            conversationId={selectedId}
+            currentEmployeeId={currentEmployeeId}
+            client={client}
+            connected={connected}
+            typing={typing[selectedId] ?? []}
+            names={{}}
+            incoming={incoming}
+            onStartTyping={startTyping}
+            onStopTyping={stopTyping}
+            kind={selectedConversation.data.kind}
+            historyVisibility={selectedConversation.data.historyVisibility}
+            mutedUntil={selectedConversation.data.mutedUntil}
+          />
+        )}
+      </div>
     </div>
   )
 }

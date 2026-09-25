@@ -174,8 +174,8 @@ internal static class DevelopmentSeeder
             command.CommandText =
                 """
                 WITH inserted AS (
-                    INSERT INTO employee (id, external_subject, display_name, email, status)
-                    VALUES ($1, $2, $3, $4, 'active')
+                    INSERT INTO employee (id, external_subject, display_name, email, status, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, 'active', timezone('utc', now()), timezone('utc', now()))
                     ON CONFLICT (external_subject) DO NOTHING
                     RETURNING id
                 )
@@ -212,9 +212,9 @@ internal static class DevelopmentSeeder
             command.CommandText =
                 """
                 WITH inserted AS (
-                    INSERT INTO conversation (id, kind, name, created_by, history_visibility, last_seq, direct_key)
-                    VALUES ($1, 'direct', NULL, $2, 'full', 0, $3)
-                    ON CONFLICT (direct_key) DO NOTHING
+                    INSERT INTO conversation (id, kind, name, created_by, history_visibility, last_seq, direct_key, created_at, updated_at)
+                    VALUES ($1, 'direct', NULL, $2, 'full', 0, $3, timezone('utc', now()), timezone('utc', now()))
+                    ON CONFLICT (direct_key) WHERE kind = 'direct' DO NOTHING
                     RETURNING id
                 )
                 SELECT id FROM inserted
@@ -249,8 +249,8 @@ internal static class DevelopmentSeeder
         {
             command.CommandText =
                 """
-                INSERT INTO conversation (id, kind, name, created_by, history_visibility, last_seq, direct_key)
-                VALUES ($1, 'group', $2, $3, 'from_join', 0, NULL)
+                INSERT INTO conversation (id, kind, name, created_by, history_visibility, last_seq, direct_key, created_at, updated_at)
+                VALUES ($1, 'group', $2, $3, 'from_join', 0, NULL, timezone('utc', now()), timezone('utc', now()))
                 ON CONFLICT (id) DO NOTHING
                 """;
 

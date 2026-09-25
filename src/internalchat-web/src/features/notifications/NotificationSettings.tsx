@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useState, type SyntheticEvent } from 'react'
+import { Save } from 'lucide-react'
 
 import type { ApiClient, NotificationPreferences } from '../../lib/api/client'
 
@@ -143,8 +144,8 @@ export function NotificationSettings({ api }: NotificationSettingsProps) {
 
         {error && <p role="alert">{error}</p>}
 
-        <button type="submit" disabled={saving || !unsaved}>
-          {saving ? 'Saving…' : 'Save'}
+        <button type="submit" className="btn-primary btn-sm" disabled={saving || !unsaved} style={{ marginTop: '12px' }}>
+          {saving ? <><Save size={14} /> Saving…</> : <><Save size={14} /> Save</>}
         </button>
       </form>
     </section>

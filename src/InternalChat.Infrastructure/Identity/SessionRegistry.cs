@@ -52,30 +52,34 @@ public sealed class SessionRegistry : ISessionRegistry
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeToLive, TimeSpan.Zero);
         cancellationToken.ThrowIfCancellationRequested();
 
-        IDatabase database = _redis.GetDatabase();
-        RedisKey key = _keyspace.Qualify(RedisKeyspace.SessionsKey(employeeId));
+        try
+        {
+            IDatabase database = _redis.GetDatabase();
+            RedisKey key = _keyspace.Qualify(RedisKeyspace.SessionsKey(employeeId));
 
-        RedisValue existing = await database.HashGetAsync(key, sessionId).ConfigureAwait(false);
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+            RedisValue existing = await database.HashGetAsync(key, sessionId).ConfigureAwait(false);
+            DateTimeOffset now = DateTimeOffset.UtcNow;
 
-        StoredSession session = Deserialize(existing) is { } previous
-            ? previous with { LastSeenAt = now }
+            StoredSession session = Deserialize(existing) is { } previous
+                ? previous with { LastSeenAt = now }
+                : new StoredSession(userAgent, now, now);
 
-            // The user agent is captured once, at first sight, and never updated. It exists so an
-            // employee can recognise a device; rewriting it on every request would mean a hijacked
-            // session displayed the attacker's browser under the same entry the employee had
-            // already decided looked familiar.
-            : new StoredSession(userAgent, now, now);
+            bool isNew = existing.IsNullOrEmpty;
 
-        bool isNew = existing.IsNullOrEmpty;
+            await database
+                .HashSetAsync(key, sessionId, JsonSerializer.Serialize(session, SerializerOptions))
+                .ConfigureAwait(false);
 
-        await database
-            .HashSetAsync(key, sessionId, JsonSerializer.Serialize(session, SerializerOptions))
-            .ConfigureAwait(false);
+            await database.KeyExpireAsync(key, timeToLive).ConfigureAwait(false);
 
-        await database.KeyExpireAsync(key, timeToLive).ConfigureAwait(false);
-
-        return isNew;
+            return isNew;
+        }
+        catch (RedisException)
+        {
+            // Transient outage; swallow and fail open (act as if it's an existing session).
+            // A Redis failure must not break messaging (Principle VII).
+            return false;
+        }
     }
 
     /// <inheritdoc />

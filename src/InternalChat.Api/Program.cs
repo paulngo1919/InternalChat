@@ -99,15 +99,48 @@ builder.Services
         options.Configuration.ChannelPrefix = StackExchange.Redis.RedisChannel.Literal("signalr");
     });
 
+// CORS — only needed in Development where the SPA (Vite, :8080) and the API (:5295) run on
+// different origins. In production, Nginx reverse-proxies both under the same origin.
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddCors(options =>
+    {
+        options.AddDefaultPolicy(policy =>
+        {
+            policy.WithOrigins("http://localhost:8080")
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .AllowCredentials();  // Required for SignalR
+        });
+    });
+}
+
 var app = builder.Build();
 
 // Must be first in the pipeline: anything registered before it can throw outside its reach and
 // return a default error page, which is where stack traces escape.
 app.UseExceptionHandler();
 
+// Add strict security headers to all responses (T214).
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Append("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.Append("X-Frame-Options", "DENY");
+    context.Response.Headers.Append("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'none'; form-action 'self';");
+    await next();
+});
+
 // After the exception handler so a rejection is still shaped as Problem Details, but before
 // endpoints so the limit is applied prior to any work being done.
 app.UseRateLimiter();
+
+// CORS must be before authentication: preflight OPTIONS requests carry no token, so they must
+// be answered before the auth middleware rejects them with 401.
+if (app.Environment.IsDevelopment())
+{
+    app.UseCors();
+}
 
 app.UseAuthentication();
 
@@ -136,6 +169,7 @@ api.MapNotificationEndpoints();
 api.MapAttachmentEndpoints();
 api.MapSearchEndpoints();
 api.MapMeetingEndpoints();
+api.MapAdminEndpoints();
 
 // [Authorize] on the hub covers the connect. Re-validation on every invocation is
 // HubAuthorizationFilter, and closing an idle connection whose access has ended is

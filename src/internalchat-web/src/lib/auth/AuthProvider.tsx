@@ -6,7 +6,7 @@
  * "protected" a property of the tree rather than a check each screen has to remember.
  */
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { AuthContext, useAuth, type AuthState } from './authContext'
 import {
@@ -45,16 +45,17 @@ export function AuthProvider({ config, children }: AuthProviderProps) {
       }),
   )
 
+  const resuming = useRef(false)
+
   useEffect(() => {
     let cancelled = false
 
     async function resume(): Promise<void> {
+      if (resuming.current) return
+      resuming.current = true
+
       try {
         const tokens: TokenSet | null = await completeSignIn(config, globalThis.location.href)
-
-        if (cancelled) {
-          return
-        }
 
         if (!tokens) {
           setStatus('signed-out')
@@ -69,17 +70,14 @@ export function AuthProvider({ config, children }: AuthProviderProps) {
         const returnTo = takeReturnTo() ?? '/'
         globalThis.history.replaceState({}, '', returnTo)
       } catch (cause) {
-        if (!cancelled) {
-          setStatus('error')
-          setError(cause instanceof Error ? cause.message : 'Sign-in failed.')
-        }
+        setStatus('error')
+        setError(cause instanceof Error ? cause.message : 'Sign-in failed.')
       }
     }
 
     void resume()
 
     return () => {
-      cancelled = true
       refresher.stop()
     }
   }, [config, refresher])

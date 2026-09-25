@@ -17,16 +17,12 @@ import {
   type SyntheticEvent,
 } from 'react'
 
-import {
-  ImageUpload,
-  type ImageUploadHandle,
-  type PendingAttachment,
-  type UploadApi,
-} from '../attachments/ImageUpload'
+import { ImageUpload, type ImageUploadHandle, type PendingAttachment, type UploadApi } from '../attachments/ImageUpload'
 import { imageFilesFromPaste } from '../attachments/paste'
 import type { OfflineQueue } from '../../lib/messages/offlineQueue'
 import { MentionAutocomplete } from './MentionAutocomplete'
 import { detectMentionQuery, type MentionCandidate } from './mentionQuery'
+import { Send, Upload } from 'lucide-react'
 
 /** Matches `MessageBody.MaximumLength` on the server and `maxLength` in openapi.yaml. */
 const MAXIMUM_BODY_LENGTH = 8000
@@ -231,8 +227,8 @@ export function Composer({
   const tooLong = body.trim().length > MAXIMUM_BODY_LENGTH
 
   return (
-    <form onSubmit={submit}>
-      <label htmlFor="composer-body">Message</label>
+    <form onSubmit={submit} className="chat-composer-form">
+      <label htmlFor="composer-body" className="sr-only">Message</label>
 
       <textarea
         id="composer-body"
@@ -243,18 +239,14 @@ export function Composer({
         onKeyDown={onKeyDown}
         onBlur={stopTyping}
         onPaste={(event) => {
-          // The files are taken and the event is left alone, so a paste carrying both an image
-          // and text still pastes the text — which is what a screenshot tool puts on the
-          // clipboard, and refusing the text half would be a regression for everyone.
           const files = imageFilesFromPaste(event)
-
           if (files.length > 0) {
             uploader.current?.upload(files)
           }
         }}
         rows={2}
-        // Not a `maxLength` attribute. Silently truncating a pasted message loses the end of it
-        // without saying so; refusing to send and explaining why does not.
+        className="composer-input"
+        placeholder="Type a message..."
         aria-invalid={tooLong}
         aria-describedby={tooLong ? 'composer-error' : undefined}
       />
@@ -268,30 +260,27 @@ export function Composer({
       )}
 
       {tooLong && (
-        <p id="composer-error" role="alert">
+        <p id="composer-error" role="alert" className="composer-error-text">
           A message is at most {MAXIMUM_BODY_LENGTH.toLocaleString()} characters. This one is{' '}
           {body.trim().length.toLocaleString()}.
         </p>
       )}
 
-      {uploadApi !== undefined && (
-        <ImageUpload
-          conversationId={conversationId}
-          api={uploadApi}
-          attachments={attachments}
-          onChange={setAttachments}
-          handleRef={uploader}
-        />
-      )}
+      <div className="composer-actions">
+        {uploadApi !== undefined && (
+          <ImageUpload
+            conversationId={conversationId}
+            api={uploadApi}
+            attachments={attachments}
+            onChange={setAttachments}
+            handleRef={uploader}
+          />
+        )}
 
-      {/*
-        Disabled while an upload is in flight rather than sending without it. The alternative —
-        sending the text now and the attachment when it lands — produces two messages for one
-        action, and the reader sees the caption before the picture.
-      */}
-      <button type="submit" disabled={!sendable || tooLong || uploading}>
-        {uploading ? 'Uploading…' : 'Send'}
-      </button>
+        <button type="submit" className="btn-primary composer-send-btn" disabled={!sendable || tooLong || uploading}>
+          {uploading ? <><Upload size={16} /> Uploading…</> : <><Send size={16} /> Send</>}
+        </button>
+      </div>
 
       {/*
         Said plainly, and the composer stays usable. The queue holds the message and delivers it on

@@ -216,6 +216,12 @@ public sealed class StackFixture : IAsyncLifetime
         }
     }
 
+    /// <summary>Stops the Redis container to simulate a cache outage (T213).</summary>
+    public Task StopRedisAsync(CancellationToken cancellationToken = default) => _redis.StopAsync(cancellationToken);
+
+    /// <summary>Starts the Redis container after an outage simulation.</summary>
+    public Task StartRedisAsync(CancellationToken cancellationToken = default) => _redis.StartAsync(cancellationToken);
+
     private async Task SetAccessTokenLifespanAsync(int seconds, CancellationToken cancellationToken)
     {
         using HttpClient client = new();

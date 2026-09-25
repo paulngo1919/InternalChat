@@ -150,7 +150,7 @@ export function createApiClient(baseUrl: string, getAccessToken: () => Promise<s
       }),
 
     /** Registers this browser for push. Re-registering the same endpoint refreshes it. */
-    registerPushSubscription: (subscription: {
+      registerPushSubscription: (subscription: {
       endpoint: string
       p256dh: string
       auth: string
@@ -160,6 +160,10 @@ export function createApiClient(baseUrl: string, getAccessToken: () => Promise<s
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(subscription),
       }),
+      
+    /** Retrieves the current retention policy (FR-053). */
+    getRetentionPolicy: () =>
+      request<{ retentionMonths: number; appliesFrom: string; nextSweepAt: string }>('/admin/retention'),
   }
 }
 

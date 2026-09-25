@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { LogOut } from 'lucide-react'
+
 import { createApiClient, type CurrentEmployee, type Session } from './lib/api/client'
 import { readApiBaseUrl } from './lib/auth/config'
 import { useAuth } from './lib/auth/authContext'
 import { ChatShell } from './features/messages/ChatShell'
 import { NotificationCapability } from './features/notifications/NotificationCapability'
 import { NotificationSettings } from './features/notifications/NotificationSettings'
+import { RetentionNotice } from './features/settings/RetentionNotice'
 import './App.css'
 
 /**
@@ -84,51 +87,71 @@ export default function App() {
   }
 
   return (
-    <main>
-      <header>
-        <h1 data-testid="display-name">{me.displayName}</h1>
-        <p>{me.email}</p>
-        <button type="button" onClick={signOut}>
-          Sign out
-        </button>
-      </header>
+    <div className="app-container">
+      <aside className="app-sidebar">
+        <header className="app-header">
+          <div className="profile-info">
+            <div className="avatar">
+              {me.displayName.charAt(0)}
+            </div>
+            <div>
+              <h1 data-testid="display-name" className="profile-name">{me.displayName}</h1>
+              <p className="profile-email">{me.email}</p>
+            </div>
+          </div>
+          <button type="button" className="btn-secondary sign-out-btn" onClick={signOut}>
+            <LogOut size={16} /> Sign out
+          </button>
+        </header>
 
-      <NotificationCapability
-        canReceiveNotifications={me.canReceiveNotifications}
-        api={api}
-        onEnabled={() => {
-          void refreshMe()
-        }}
-      />
+        <div className="sidebar-sections">
+          <NotificationCapability
+            canReceiveNotifications={me.canReceiveNotifications}
+            api={api}
+            onEnabled={() => {
+              void refreshMe()
+            }}
+          />
 
-      <ChatShell
-        authorized={api.authorized}
-        getAccessToken={getAccessToken}
-        currentEmployeeId={me.id}
-      />
+          <section aria-labelledby="sessions-heading" className="settings-section">
+            <h2 id="sessions-heading">Your Devices</h2>
+            <ul className="session-list">
+              {sessions.map((session) => (
+                <li key={session.id} data-testid="session" className="session-item">
+                  <div className="session-info">
+                    <span className="device-name">{session.userAgent || 'Unknown device'}</span>
+                    {session.isCurrent && <span className="current-badge">This device</span>}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-danger-text"
+                    onClick={() => {
+                      void revoke(session.id)
+                    }}
+                  >
+                    Sign out
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
 
-      <section aria-labelledby="sessions-heading">
-        <h2 id="sessions-heading">Your signed-in devices</h2>
+          <div className="settings-section">
+            <NotificationSettings api={api} />
+          </div>
+          <div className="settings-section">
+            <RetentionNotice api={api} />
+          </div>
+        </div>
+      </aside>
 
-        <ul>
-          {sessions.map((session) => (
-            <li key={session.id} data-testid="session">
-              <span>{session.userAgent || 'Unknown device'}</span>
-              {session.isCurrent && <span> (this device)</span>}
-              <button
-                type="button"
-                onClick={() => {
-                  void revoke(session.id)
-                }}
-              >
-                Sign this device out
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <NotificationSettings api={api} />
-    </main>
+      <main className="app-main">
+        <ChatShell
+          authorized={api.authorized}
+          getAccessToken={getAccessToken}
+          currentEmployeeId={me.id}
+        />
+      </main>
+    </div>
   )
 }

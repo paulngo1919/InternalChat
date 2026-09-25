@@ -298,6 +298,11 @@ jobs:
             exit 1
           fi
 
+      - name: Lighthouse CI & Core Web Vitals
+        uses: treosh/lighthouse-ci-action@v12
+        with:
+          configPath: ./src/internalchat-web/.lighthouserc.json
+
   # ---------------------------------------------------------------------------
   # Gate 9 — Every image builds and `docker compose up` reaches a healthy state
   # ---------------------------------------------------------------------------

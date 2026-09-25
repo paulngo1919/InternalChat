@@ -9,6 +9,7 @@
  */
 
 import { useState } from 'react'
+import { BellRing } from 'lucide-react'
 
 import type { ApiClient } from '../../lib/api/client'
 import {
@@ -75,8 +76,8 @@ export function NotificationCapability({
       <p>{MESSAGES[capability]}</p>
 
       {canOffer && (
-        <button type="button" onClick={enable} disabled={enabling}>
-          {enabling ? 'Enabling…' : 'Enable notifications'}
+        <button type="button" className="btn-primary btn-sm mt-8" onClick={enable} disabled={enabling} style={{ marginTop: '8px' }}>
+          {enabling ? <><BellRing size={14} /> Enabling…</> : <><BellRing size={14} /> Enable notifications</>}
         </button>
       )}
 

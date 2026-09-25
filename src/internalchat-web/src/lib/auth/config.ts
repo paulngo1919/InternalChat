@@ -44,3 +44,9 @@ export function readOidcConfig(env: Record<string, string | undefined>): OidcCon
 export function readApiBaseUrl(env: Record<string, string | undefined>): string {
   return env.VITE_API_BASE_URL ?? '/api/v1'
 }
+
+/** Base URL of this platform's SignalR Hub. */
+export function readHubBaseUrl(env: Record<string, string | undefined>): string {
+  const apiBase = readApiBaseUrl(env)
+  return apiBase.replace('/api/v1', '/hubs/chat')
+}

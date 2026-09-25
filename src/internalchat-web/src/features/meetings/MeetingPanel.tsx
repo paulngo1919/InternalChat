@@ -13,8 +13,8 @@
  * conversation the moment a meeting starts, and most of them will not join. Pulling the SDK down to
  * show a button would defeat the split for the majority to serve the minority.
  */
-
 import { Suspense, useCallback, useState } from 'react'
+import { Video } from 'lucide-react'
 
 import type { MessagingClient, MeetingTokenResponse } from '../../lib/api/messages'
 import { MeetingRoom } from './index'
@@ -138,8 +138,8 @@ export function MeetingPanel({ conversationId, client, currentEmployeeId }: Meet
   return (
     <section aria-label="Meeting" className="meeting-panel">
       {meeting === null ? (
-        <button type="button" onClick={start} disabled={busy} data-testid="start-meeting">
-          {busy ? 'Starting…' : 'Start a meeting'}
+        <button type="button" className="btn-secondary" onClick={start} disabled={busy} data-testid="start-meeting">
+          {busy ? <><Video size={16} /> Starting…</> : <><Video size={16} /> Start a meeting</>}
         </button>
       ) : (
         <JoinPrompt meeting={meeting} onJoin={join} joining={busy} />

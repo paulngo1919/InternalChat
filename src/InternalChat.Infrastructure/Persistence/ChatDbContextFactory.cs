@@ -24,7 +24,7 @@ public sealed class ChatDbContextFactory : IDesignTimeDbContextFactory<ChatDbCon
     private const string ConnectionStringVariable = "INTERNALCHAT_DB_CONNECTION";
 
     private const string LocalDevelopmentFallback =
-        "Host=localhost;Port=5432;Database=internalchat;Username=internalchat;Password=internalchat";
+        "Host=localhost;Port=5432;Database=internalchat;Username=internalchat;Password=change-me-postgres";
 
     /// <inheritdoc />
     public ChatDbContext CreateDbContext(string[] args)

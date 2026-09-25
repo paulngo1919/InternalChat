@@ -21,11 +21,8 @@ COPY src/InternalChat.Application/InternalChat.Application.csproj src/InternalCh
 COPY src/InternalChat.Infrastructure/InternalChat.Infrastructure.csproj src/InternalChat.Infrastructure/
 COPY src/InternalChat.Api/InternalChat.Api.csproj src/InternalChat.Api/
 COPY src/InternalChat.Worker/InternalChat.Worker.csproj src/InternalChat.Worker/
-COPY tests/Unit/InternalChat.UnitTests.csproj tests/Unit/
-COPY tests/Integration/InternalChat.IntegrationTests.csproj tests/Integration/
-COPY tests/Contract/InternalChat.ContractTests.csproj tests/Contract/
-COPY tests/Architecture/InternalChat.ArchitectureTests.csproj tests/Architecture/
-RUN dotnet restore src/InternalChat.Infrastructure/InternalChat.Infrastructure.csproj
+
+RUN dotnet restore src/InternalChat.Infrastructure/InternalChat.Infrastructure.csproj -r linux-x64
 
 COPY src/ src/
 

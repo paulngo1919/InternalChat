@@ -129,56 +129,69 @@ export function SearchPanel({ api, onJumpTo, conversationId }: SearchPanelProps)
   const showResults = query.trim().length >= MINIMUM_QUERY_LENGTH
 
   return (
-    <section className="search" aria-label="Search messages">
-      <form onSubmit={onSubmit}>
-        <label htmlFor="search-q">Search messages</label>
-        <input
-          id="search-q"
-          type="search"
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value)
-          }}
-          placeholder="Search your conversations"
-          data-testid="search-input"
-        />
+    <section className="search-panel-container" aria-label="Search messages">
+      <form onSubmit={onSubmit} className="create-group-form" style={{ padding: 0, border: 'none', background: 'transparent' }}>
+        <div className="form-group">
+          <label htmlFor="search-q">Search messages</label>
+          <input
+            id="search-q"
+            type="search"
+            className="form-control"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value)
+            }}
+            placeholder="Search your conversations"
+            data-testid="search-input"
+          />
+        </div>
 
         <fieldset className="search__filters">
           <legend>Filters</legend>
 
-          <label htmlFor="search-attachment">Attachments</label>
-          <select
-            id="search-attachment"
-            value={hasAttachment}
-            onChange={(event) => {
-              setHasAttachment(event.target.value as '' | 'any' | 'image' | 'video')
-            }}
-          >
-            <option value="">Any message</option>
-            <option value="any">With an attachment</option>
-            <option value="image">With an image</option>
-            <option value="video">With a video</option>
-          </select>
+          <div className="form-group">
+            <label htmlFor="search-attachment">Attachments</label>
+            <select
+              id="search-attachment"
+              className="form-control"
+              value={hasAttachment}
+              onChange={(event) => {
+                setHasAttachment(event.target.value as '' | 'any' | 'image' | 'video')
+              }}
+            >
+              <option value="">Any message</option>
+              <option value="any">With an attachment</option>
+              <option value="image">With an image</option>
+              <option value="video">With a video</option>
+            </select>
+          </div>
 
-          <label htmlFor="search-from">From</label>
-          <input
-            id="search-from"
-            type="date"
-            value={from}
-            onChange={(event) => {
-              setFrom(event.target.value)
-            }}
-          />
-
-          <label htmlFor="search-to">To</label>
-          <input
-            id="search-to"
-            type="date"
-            value={to}
-            onChange={(event) => {
-              setTo(event.target.value)
-            }}
-          />
+          <div className="search-date-group">
+            <div>
+              <label htmlFor="search-from">From</label>
+              <input
+                id="search-from"
+                type="date"
+                className="form-control"
+                value={from}
+                onChange={(event) => {
+                  setFrom(event.target.value)
+                }}
+              />
+            </div>
+            <div>
+              <label htmlFor="search-to">To</label>
+              <input
+                id="search-to"
+                type="date"
+                className="form-control"
+                value={to}
+                onChange={(event) => {
+                  setTo(event.target.value)
+                }}
+              />
+            </div>
+          </div>
         </fieldset>
       </form>
 

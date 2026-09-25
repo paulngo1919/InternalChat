@@ -22,6 +22,7 @@ import {
   type ChangeEvent,
   type RefObject,
 } from 'react'
+import { Paperclip, X } from 'lucide-react'
 
 import { type AttachmentKind, kindOf, rejectionFor } from './fileConstraints'
 
@@ -230,11 +231,12 @@ export function ImageUpload({
     <div className="attachment-upload">
       <button
         type="button"
+        className="btn-secondary btn-icon"
         onClick={() => inputRef.current?.click()}
         disabled={disabled ?? false}
         aria-label="Attach an image or video"
       >
-        Attach
+        <Paperclip size={20} />
       </button>
 
       <input
@@ -269,12 +271,13 @@ export function ImageUpload({
 
             <button
               type="button"
+              className="btn-danger-text btn-sm"
               onClick={() => {
                 remove(item.localId)
               }}
               aria-label={`Remove ${item.file.name}`}
             >
-              Remove
+              <X size={14} />
             </button>
           </li>
         ))}

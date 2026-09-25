@@ -101,11 +101,12 @@ export function MessageList({
 
   return (
     <Virtuoso
+      style={{ flex: 1, overflowX: 'hidden' }}
       data={rows}
       // Anchors the view to the newest message and keeps it there as messages arrive — unless the
       // reader has scrolled up, in which case it leaves them where they are. Yanking somebody back
       // to the bottom mid-read is the single most irritating thing a chat list can do.
-      followOutput="smooth"
+      followOutput="auto"
       initialTopMostItemIndex={Math.max(rows.length - 1, 0)}
       startReached={() => {
         if (hasOlder) {
@@ -125,17 +126,20 @@ export function MessageList({
 
         return (
           <article
+            className={`message-row ${mine ? 'message-mine' : 'message-theirs'}`}
             data-testid={row.kind === 'pending' ? 'pending-message' : 'message'}
             data-mine={mine}
           >
-            {row.kind === 'message' ? (
-              <MessageBody message={row.message} refreshAttachment={refreshAttachment} />
-            ) : (
-              <>
-                <span>{row.message.body}</span>
-                <small aria-live="polite"> Sending…</small>
-              </>
-            )}
+            <div className="message-bubble">
+              {row.kind === 'message' ? (
+                <MessageBody message={row.message} refreshAttachment={refreshAttachment} />
+              ) : (
+                <>
+                  <span>{row.message.body}</span>
+                  <small className="pending-indicator" aria-live="polite"> Sending…</small>
+                </>
+              )}
+            </div>
           </article>
         )
       }}

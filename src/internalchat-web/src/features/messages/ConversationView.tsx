@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Bell, BellOff, Users } from 'lucide-react'
 
 import type { MessagingClient, MessageResponse } from '../../lib/api/messages'
 import { OfflineQueue, type QueuedMessage, type SendOutcome } from '../../lib/messages/offlineQueue'
@@ -55,6 +56,7 @@ export function ConversationView({
   const [messages, setMessages] = useState<readonly MessageResponse[]>([])
   const [pending, setPending] = useState<readonly QueuedMessage[]>([])
   const [hasOlder, setHasOlder] = useState(false)
+  const [showMembers, setShowMembers] = useState(false)
 
   // Local and optimistic: muting is a personal notification preference, not something other
   // viewers of this conversation need to see, so there is no shared cache entry to coordinate with.
@@ -236,48 +238,63 @@ export function ConversationView({
   const stillPending = pending.filter((p) => !confirmedKeys.has(p.clientMessageKey))
 
   return (
-    <section aria-label="Conversation">
-      {kind === 'group' && <HistoryNotice historyVisibility={historyVisibility} />}
+    <section aria-label="Conversation" className="chat-view-container">
+      <div className="chat-view-header">
+        <div className="chat-view-actions">
+          <button type="button" className="btn-secondary" onClick={toggleMute} aria-pressed={muted} data-testid="mute-toggle">
+            {muted ? <><Bell size={16} /> Unmute Notifications</> : <><BellOff size={16} /> Mute Notifications</>}
+          </button>
+        </div>
+        
+        {kind === 'group' && (
+          <div className="group-members-container">
+            <button type="button" className="btn-secondary" onClick={() => setShowMembers(v => !v)}>
+              <Users size={16} /> Members
+            </button>
+            {showMembers && (
+              <GroupMembers
+                conversationId={conversationId}
+                client={client}
+                currentEmployeeId={currentEmployeeId}
+              />
+            )}
+          </div>
+        )}
+      </div>
 
-      <button type="button" onClick={toggleMute} aria-pressed={muted} data-testid="mute-toggle">
-        {muted ? 'Unmute' : 'Mute'}
-      </button>
-
-      <MeetingPanel
-        conversationId={conversationId}
-        client={client}
-        currentEmployeeId={currentEmployeeId}
-      />
-
-      <MessageList
-        messages={visible}
-        pending={stillPending}
-        currentEmployeeId={currentEmployeeId}
-        onLoadOlder={loadOlder}
-        hasOlder={hasOlder}
-        refreshAttachment={(attachmentId) => client.getAttachment(attachmentId)}
-      />
-
-      <TypingIndicator typing={typing} names={names} />
-
-      <Composer
-        conversationId={conversationId}
-        queue={queue}
-        connected={connected}
-        onEnqueued={() => void queue.flush()}
-        onStartTyping={onStartTyping}
-        onStopTyping={onStopTyping}
-        mentionCandidates={mentionCandidates}
-        uploadApi={client}
-      />
-
-      {kind === 'group' && (
-        <GroupMembers
+      <div className="chat-notices">
+        {kind === 'group' && <HistoryNotice historyVisibility={historyVisibility} />}
+        <MeetingPanel
           conversationId={conversationId}
           client={client}
           currentEmployeeId={currentEmployeeId}
         />
-      )}
+      </div>
+
+      <div className="chat-messages-area">
+        <MessageList
+          messages={visible}
+          pending={stillPending}
+          currentEmployeeId={currentEmployeeId}
+          onLoadOlder={loadOlder}
+          hasOlder={hasOlder}
+          refreshAttachment={(attachmentId) => client.getAttachment(attachmentId)}
+        />
+      </div>
+
+      <div className="chat-composer-area">
+        <TypingIndicator typing={typing} names={names} />
+        <Composer
+          conversationId={conversationId}
+          queue={queue}
+          connected={connected}
+          onEnqueued={() => void queue.flush()}
+          onStartTyping={onStartTyping}
+          onStopTyping={onStopTyping}
+          mentionCandidates={mentionCandidates}
+          uploadApi={client}
+        />
+      </div>
     </section>
   )
 }

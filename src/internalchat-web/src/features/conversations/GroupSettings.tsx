@@ -10,6 +10,7 @@
 
 import { useCallback, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Search, Plus, X, Check } from 'lucide-react'
 
 import type { EmployeeSummary } from '../../lib/api/client'
 import type { MessagingClient } from '../../lib/api/messages'
@@ -62,6 +63,7 @@ export function CreateGroupForm({ client, onCreated }: CreateGroupFormProps) {
   return (
     <form
       aria-label="Create a group"
+      className="create-group-form"
       onSubmit={(event) => {
         event.preventDefault()
         if (canSubmit) {
@@ -69,60 +71,70 @@ export function CreateGroupForm({ client, onCreated }: CreateGroupFormProps) {
         }
       }}
     >
-      <label htmlFor="group-name">Group name</label>
-      <input
-        id="group-name"
-        value={name}
-        onChange={(event) => {
-          setName(event.target.value)
-        }}
-      />
+      <div className="form-group">
+        <label htmlFor="group-name">Group name</label>
+        <input
+          id="group-name"
+          className="form-control"
+          value={name}
+          onChange={(event) => {
+            setName(event.target.value)
+          }}
+        />
+      </div>
 
-      <label htmlFor="group-member-search">Find colleagues to add</label>
-      <input
-        id="group-member-search"
-        value={query}
-        onChange={(event) => {
-          setQuery(event.target.value)
-        }}
-      />
-      <button
-        type="button"
-        onClick={() => {
-          void search()
-        }}
-      >
-        Search
-      </button>
+      <div className="form-group">
+        <label htmlFor="group-member-search">Find colleagues to add</label>
+        <div className="search-input-group">
+          <input
+            id="group-member-search"
+            className="form-control"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value)
+            }}
+          />
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              void search()
+            }}
+          >
+            <Search size={16} /> Search
+          </button>
+        </div>
+      </div>
 
-      <ul aria-label="Search results">
+      <ul aria-label="Search results" className="search-results-list">
         {candidates.map((candidate) => (
-          <li key={candidate.id}>
+          <li key={candidate.id} className="search-result-item">
             <span>{candidate.displayName}</span>
             <button
               type="button"
+              className={selected.has(candidate.id) ? "btn-danger-text btn-sm" : "btn-primary btn-sm"}
               onClick={() => {
                 toggle(candidate)
               }}
             >
-              {selected.has(candidate.id) ? 'Remove' : 'Add'}
+              {selected.has(candidate.id) ? <><X size={14}/> Remove</> : <><Plus size={14}/> Add</>}
             </button>
           </li>
         ))}
       </ul>
 
       {selected.size > 0 && (
-        <p data-testid="selected-member-count">{selected.size} member(s) selected</p>
+        <p data-testid="selected-member-count" className="selected-count">{selected.size} member(s) selected</p>
       )}
 
       {create.isError && (
-        <p role="alert">
+        <p role="alert" className="error-text">
           {create.error instanceof Error ? create.error.message : 'Could not create the group.'}
         </p>
       )}
 
-      <button type="submit" disabled={!canSubmit}>
-        Create group
+      <button type="submit" className="btn-primary" disabled={!canSubmit} style={{ marginTop: '16px', width: '100%' }}>
+        <Check size={16} /> Create group
       </button>
     </form>
   )
@@ -186,65 +198,77 @@ export function GroupMembers({ conversationId, client, currentEmployeeId }: Grou
   const memberIds = new Set(members.data.map((member) => member.employee.id))
 
   return (
-    <section aria-label="Group members">
-      <ul>
-        {members.data.map((member) => (
-          <li key={member.employee.id} data-testid="group-member">
-            <span>{member.employee.displayName}</span>
-            <span> ({member.role})</span>
+    <section aria-label="Group members" className="group-members-panel">
+      <div className="group-members-list-wrapper">
+        <h3 className="group-members-title">Members</h3>
+        <ul className="group-members-list">
+          {members.data.map((member) => (
+            <li key={member.employee.id} data-testid="group-member" className="group-member-item">
+              <span className="group-member-name">{member.employee.displayName}</span>
+              <span className="group-member-role"> ({member.role})</span>
 
-            {isAdmin && member.employee.id !== currentEmployeeId && (
-              <button
-                type="button"
-                onClick={() => {
-                  removeMember.mutate(member.employee.id)
-                }}
-                disabled={removeMember.isPending}
-              >
-                Remove
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
+              {isAdmin && member.employee.id !== currentEmployeeId && (
+                <button
+                  type="button"
+                  className="btn-danger btn-sm"
+                  onClick={() => {
+                    removeMember.mutate(member.employee.id)
+                  }}
+                  disabled={removeMember.isPending}
+                >
+                  Remove
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
 
       {isAdmin && (
-        <div aria-label="Add a member">
-          <label htmlFor={`add-member-search-${conversationId}`}>Add a member</label>
-          <input
-            id={`add-member-search-${conversationId}`}
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value)
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => {
-              void search()
-            }}
-          >
-            Search
-          </button>
+        <div aria-label="Add a member" className="add-member-section">
+          <label htmlFor={`add-member-search-${conversationId}`} className="sr-only">Add a member</label>
+          <div className="add-member-input-group">
+            <input
+              id={`add-member-search-${conversationId}`}
+              className="add-member-input"
+              placeholder="Add a member..."
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value)
+              }}
+            />
+            <button
+              type="button"
+              className="btn-secondary btn-sm"
+              onClick={() => {
+                void search()
+              }}
+            >
+              Search
+            </button>
+          </div>
 
-          <ul aria-label="Search results">
-            {candidates
-              .filter((candidate) => !memberIds.has(candidate.id))
-              .map((candidate) => (
-                <li key={candidate.id}>
-                  <span>{candidate.displayName}</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      addMember.mutate(candidate.id)
-                    }}
-                    disabled={addMember.isPending}
-                  >
-                    Add
-                  </button>
-                </li>
-              ))}
-          </ul>
+          {candidates.length > 0 && (
+            <ul aria-label="Search results" className="search-results-list">
+              {candidates
+                .filter((candidate) => !memberIds.has(candidate.id))
+                .map((candidate) => (
+                  <li key={candidate.id} className="search-result-item">
+                    <span>{candidate.displayName}</span>
+                    <button
+                      type="button"
+                      className="btn-primary btn-sm"
+                      onClick={() => {
+                        addMember.mutate(candidate.id)
+                      }}
+                      disabled={addMember.isPending}
+                    >
+                      Add
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          )}
         </div>
       )}
     </section>

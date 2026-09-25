@@ -118,6 +118,8 @@ public static class InfrastructureServiceCollectionExtensions
         // T164 — PostgreSQL full-text search (research.md D9). The interface is the seam that keeps
         // the OpenSearch option open if the load test finds the budget breached.
         services.TryAddScoped<ISearchIndex, Search.PostgresSearchIndex>();
+        
+        services.TryAddScoped<IExportProvider, Exports.ExportProvider>();
     }
 
     /// <summary>
@@ -280,6 +282,12 @@ public static class InfrastructureServiceCollectionExtensions
         // Scoped so an audit record written by the pipeline's audit behavior joins the same
         // transaction as the action it describes (Principle IV).
         services.TryAddScoped<IAuditLog, Persistence.Audit.AuditLog>();
+
+        // T206 - Sweeps
+        services.TryAddScoped<IRetentionSweep, Persistence.RetentionSweep>();
+
+        // T210 - Orphaned attachments
+        services.TryAddScoped<IOrphanReclaimSweep, Persistence.OrphanReclaimSweep>();
     }
 
     private static void AddCaching(IServiceCollection services, IConfiguration configuration)

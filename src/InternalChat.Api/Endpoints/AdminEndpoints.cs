@@ -20,8 +20,10 @@ public static class AdminEndpoints
             .RequireAuthorization(AuthorizationPolicies.PlatformAdmin)
             .WithTags("Admin");
 
-        group.MapGet("/retention", GetRetentionPolicy)
+        // FR-053: Retention policy is visible to all employees
+        routes.MapGet("/admin/retention", GetRetentionPolicy)
             .RequireAuthorization(AuthorizationPolicies.Employee)
+            .WithTags("Admin")
             .WithName("GetRetentionPolicy")
             .WithSummary("Current retention policy (FR-053)");
 

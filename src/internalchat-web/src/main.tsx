@@ -5,6 +5,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App.tsx'
 import { AuthProvider, RequireAuth } from './lib/auth/AuthProvider'
 import { readOidcConfig } from './lib/auth/config'
+// Inter is bundled rather than fetched from a font CDN: the CSP allows font-src 'self' only, and
+// the app must work offline (constitution VIII).
+import '@fontsource/inter/400.css'
+import '@fontsource/inter/500.css'
+import '@fontsource/inter/600.css'
 import './index.css'
 
 const rootElement = document.getElementById('root')

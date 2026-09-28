@@ -701,3 +701,91 @@
   border-radius: 2px;
   padding: 0 2px;
 }
+
+/* ─── Mobile Navigation ─────────────────────────────────────────────────────── */
+
+.mobile-nav-bar {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-light);
+  min-height: 44px;
+}
+
+.mobile-nav-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 12px 6px 4px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--accent-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-nav-back:hover {
+  background: var(--accent-transparent);
+}
+
+.mobile-nav-back:active {
+  opacity: 0.7;
+}
+
+.mobile-nav-back svg {
+  flex-shrink: 0;
+  margin-left: -4px;
+}
+
+/* "Open Chat" action card in the sidebar */
+.mobile-nav-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+  margin-bottom: 8px;
+}
+
+.mobile-nav-action:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 1px var(--accent-transparent);
+}
+
+.mobile-nav-action:active {
+  transform: scale(0.98);
+}
+
+.mobile-nav-action svg:first-child {
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.mobile-nav-action span {
+  flex: 1;
+  text-align: left;
+}
+
+/* Rotated chevron pointing right → acts as a "go" affordance */
+.mobile-nav-chevron-right {
+  transform: rotate(180deg);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}

@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { Plus, Search } from 'lucide-react'
+import { Plus, Search, ChevronLeft } from 'lucide-react'
 
 import {
   createMessagingClient,
@@ -275,15 +275,16 @@ export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: Cha
       {(!layout.isMobile || selectedId !== null) && (
         <div className="chat-main">
           {layout.isMobile && selectedId !== null && (
-            <div style={{ padding: '8px', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)' }}>
-              <button type="button" className="btn-secondary" onClick={() => { setSelectedId(null); }}>
-                &larr; Back to chats
+            <div className="mobile-nav-bar">
+              <button type="button" className="mobile-nav-back" onClick={() => { setSelectedId(null); }}>
+                <ChevronLeft size={20} />
+                <span>Chats</span>
               </button>
             </div>
           )}
           {selectedId === null || !selectedConversation.data ? (
             <div className="empty-state">
-              <p>Choose a conversation to start chatting.</p>
+              <p>Choose a conversation.</p>
             </div>
           ) : (
             <ConversationView

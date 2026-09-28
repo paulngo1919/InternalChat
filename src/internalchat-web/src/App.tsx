@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { LogOut } from 'lucide-react'
+import { LogOut, ChevronLeft, MessageSquare } from 'lucide-react'
 
 import { createApiClient, type CurrentEmployee, type Session } from './lib/api/client'
 import { readApiBaseUrl } from './lib/auth/config'
@@ -10,6 +10,8 @@ import { NotificationCapability } from './features/notifications/NotificationCap
 import { NotificationSettings } from './features/notifications/NotificationSettings'
 import { RetentionNotice } from './features/settings/RetentionNotice'
 import { useLayoutState } from './features/layout/useLayoutState'
+import { ThemeToggle } from './features/layout/ThemeToggle'
+import { useTheme } from './features/layout/useTheme'
 import './App.css'
 
 /**
@@ -20,6 +22,9 @@ import './App.css'
  */
 export default function App() {
   const { getAccessToken, signOut } = useAuth()
+  
+  // Initialize theme tracking
+  useTheme()
 
   const api = useMemo(
     () => createApiClient(readApiBaseUrl(import.meta.env), getAccessToken),
@@ -112,14 +117,19 @@ export default function App() {
           <div className="sidebar-sections">
             {layout.isMobile && (
               <button 
-                className="btn-primary" 
-                style={{ width: '100%', marginBottom: '16px' }}
+                className="mobile-nav-action"
                 onClick={() => { setMobileView('chat'); }}
               >
-                Go to Chat
+                <MessageSquare size={18} />
+                <span>Open Chat</span>
+                <ChevronLeft size={16} className="mobile-nav-chevron-right" />
               </button>
             )}
             
+            <div className="settings-section">
+              <ThemeToggle />
+            </div>
+
             <NotificationCapability
               canReceiveNotifications={me.canReceiveNotifications}
               api={api}
@@ -144,7 +154,7 @@ export default function App() {
                         void revoke(session.id)
                       }}
                     >
-                      Sign out
+                      Sign this device out
                     </button>
                   </li>
                 ))}
@@ -164,9 +174,10 @@ export default function App() {
       {(!layout.isMobile || mobileView === 'chat') && (
         <main className="app-main">
           {layout.isMobile && (
-            <div style={{ padding: '8px', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)' }}>
-              <button className="btn-secondary" onClick={() => { setMobileView('sidebar'); }}>
-                &larr; Back to Menu
+            <div className="mobile-nav-bar">
+              <button className="mobile-nav-back" onClick={() => { setMobileView('sidebar'); }}>
+                <ChevronLeft size={20} />
+                <span>Menu</span>
               </button>
             </div>
           )}

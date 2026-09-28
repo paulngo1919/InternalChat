@@ -434,6 +434,7 @@ Re-verify each at pin time.
 | ClamAV | GPL-2.0 | Free | Separate daemon, not linked |
 | nginx | BSD-2-Clause | Free | |
 | React, Vite, TanStack Query, react-virtuoso | MIT | Free | |
+| Inter typeface (`@fontsource/inter`) | OFL-1.1 | Free | Bundled into the web build; no font CDN at runtime |
 | Testcontainers for .NET, NetArchTest, NSubstitute | MIT | Free | |
 | YamlDotNet | MIT | Free | Test-side only — the contract suite reads `contracts/openapi.yaml` so it asserts against the committed document rather than a copy of it in C# |
 | `Lib.Net.Http.WebPush` | MIT | Free | T134 — RFC 8291/8292 VAPID web push. Talks directly to whatever endpoint the browser subscription names; no account, SDK, or fee |

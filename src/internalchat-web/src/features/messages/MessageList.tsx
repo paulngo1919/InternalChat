@@ -139,7 +139,7 @@ export function MessageList({
   ]
 
   const virtuosoRef = useRef<VirtuosoHandle>(null)
-  const [isAtBottom, setIsAtBottom] = useState(true)
+  const [, setIsAtBottom] = useState(true)
 
   return (
     <Virtuoso
@@ -155,7 +155,7 @@ export function MessageList({
       // reader has scrolled up, in which case it leaves them where they are. Yanking somebody back
       // to the bottom mid-read is the single most irritating thing a chat list can do.
       atBottomStateChange={setIsAtBottom}
-      followOutput={() => isAtBottom ? 'auto' : false}
+      followOutput="auto"
       alignToBottom={true}
       initialTopMostItemIndex={{ index: 'LAST', align: 'end' }}
       startReached={() => {

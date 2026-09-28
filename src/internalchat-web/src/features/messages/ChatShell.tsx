@@ -18,7 +18,7 @@ import {
 } from '../../lib/api/messages'
 import { readHubBaseUrl } from '../../lib/auth/config'
 import { ChatConnection, type ChatTransport } from '../../lib/realtime/chatConnection'
-import { DeliveryTelemetry } from '../../lib/realtime/deliveryTelemetry'
+import { DeliveryTelemetry, withSendTiming } from '../../lib/realtime/deliveryTelemetry'
 import { ConversationList } from '../conversations/ConversationList'
 import { applyIncomingToConversationList } from '../conversations/conversationListCache'
 import { CreateGroupForm } from '../conversations/GroupSettings'
@@ -26,6 +26,7 @@ import { conversationsQueryKey } from '../conversations/queryKeys'
 import { SearchPanel } from '../search/SearchPanel'
 import { ConversationView } from './ConversationView'
 import { addTombstone } from './messageStore'
+import { useLayoutState } from '../layout/useLayoutState'
 
 interface ChatShellProps {
   /** Issues authorized requests. Comes from the API client so the token handling is shared. */
@@ -39,10 +40,10 @@ const NO_DELETIONS: readonly string[] = []
 
 /** The messaging screen. */
 export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: ChatShellProps) {
-  const [client] = useState(() => createMessagingClient(authorized))
-
-  // 002 FR-011 — what delivery felt like here, reported in aggregate once a minute.
+  // 002 FR-011 — what delivery felt like here, reported in aggregate once a minute. The client is
+  // wrapped so each fresh send also refines the clock-offset estimate the report depends on.
   const [telemetry] = useState(() => new DeliveryTelemetry(authorized))
+  const [client] = useState(() => withSendTiming(createMessagingClient(authorized), telemetry))
   const queryClient = useQueryClient()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -53,6 +54,8 @@ export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: Cha
   const [connected, setConnected] = useState(false)
   const [transport, setTransport] = useState<ChatTransport>('webSockets')
   const [typing, setTyping] = useState<Readonly<Record<string, readonly string[]>>>({})
+
+  const layout = useLayoutState()
 
   // Read inside the connection effect below, which is built once and must still see the currently
   // open conversation — not the one that was open when the connection was constructed.
@@ -86,22 +89,21 @@ export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: Cha
 
     // 002 FR-006: the list's unread badge and preview move with the message, not with the list's
     // next refetch. Patched in place; only a conversation the cache has never seen costs a refetch.
-    let unknownConversation = false
-    queryClient.setQueryData<ConversationPage>(conversationsQueryKey, (page) => {
-      if (page === undefined) {
-        return page
-      }
+    const page = queryClient.getQueryData<ConversationPage>(conversationsQueryKey)
 
+    if (page !== undefined) {
       const patch = applyIncomingToConversationList(page, messages, {
         openConversationId: selectedIdRef.current,
         currentEmployeeId,
       })
-      unknownConversation = patch.unknownConversation
-      return patch.page
-    })
 
-    if (unknownConversation) {
-      void queryClient.invalidateQueries({ queryKey: conversationsQueryKey, exact: true })
+      if (patch.page !== page) {
+        queryClient.setQueryData<ConversationPage>(conversationsQueryKey, patch.page)
+      }
+
+      if (patch.unknownConversation) {
+        void queryClient.invalidateQueries({ queryKey: conversationsQueryKey, exact: true })
+      }
     }
   }, [currentEmployeeId, queryClient])
 
@@ -168,8 +170,9 @@ export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: Cha
     telemetry.start()
 
     connectionRef.current = connection
-    connection.start().catch((error: Error) => {
-      if (error.name !== 'AbortError' && !error.message?.includes('stopped during negotiation')) {
+    connection.start().catch((cause: unknown) => {
+      const error = cause instanceof Error ? cause : new Error(String(cause))
+      if (error.name !== 'AbortError' && !error.message.includes('stopped during negotiation')) {
         console.error('SignalR connection failed:', error)
       }
     })
@@ -213,85 +216,94 @@ export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: Cha
           Limited connection — messages may arrive more slowly.
         </p>
       )}
-      <div className="chat-sidebar">
-        <ConversationList client={client} selectedId={selectedId} onSelect={setSelectedId} />
 
-        <div className="sidebar-actions">
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => {
-              setCreatingGroup((value) => {
-                if (!value) setSearching(false)
-                return !value
-              })
-            }}
-          >
-            {creatingGroup ? 'Cancel' : <><Plus size={16} /> New group</>}
-          </button>
+      {(!layout.isMobile || selectedId === null) && (
+        <div className="chat-sidebar">
+          <ConversationList client={client} selectedId={selectedId} onSelect={setSelectedId} />
 
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => {
-              setSearching((value) => {
-                if (!value) setCreatingGroup(false)
-                return !value
-              })
-            }}
-            aria-pressed={searching}
-          >
-            {searching ? 'Close search' : <><Search size={16} /> Search</>}
-          </button>
-        </div>
+          <div className="sidebar-actions">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                setCreatingGroup((value) => {
+                  if (!value) setSearching(false)
+                  return !value
+                })
+              }}
+            >
+              {creatingGroup ? 'Cancel' : <><Plus size={16} /> New group</>}
+            </button>
 
-        {searching && (
-          <SearchPanel
-            api={client}
-            onJumpTo={(conversationId) => {
-              setSelectedId(conversationId)
-              setSearching(false)
-            }}
-          />
-        )}
-
-        {creatingGroup && (
-          <CreateGroupForm
-            client={client}
-            onCreated={(conversationId) => {
-              setCreatingGroup(false)
-              setSelectedId(conversationId)
-            }}
-          />
-        )}
-      </div>
-
-      <div className="chat-main">
-        {selectedId === null || !selectedConversation.data ? (
-          <div className="empty-state">
-            <p>Choose a conversation to start chatting.</p>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                setSearching((value) => {
+                  if (!value) setCreatingGroup(false)
+                  return !value
+                })
+              }}
+              aria-pressed={searching}
+            >
+              {searching ? 'Close search' : <><Search size={16} /> Search</>}
+            </button>
           </div>
-        ) : (
-          <ConversationView
-            conversationId={selectedId}
-            currentEmployeeId={currentEmployeeId}
-            client={client}
-            connected={connected}
-            typing={typing[selectedId] ?? []}
-            names={{}}
-            incoming={incoming}
-            deletedIds={deleted[selectedId] ?? NO_DELETIONS}
-            onSendTimed={(startedAt, finishedAt, sentAt) => {
-              telemetry.observeRoundTrip(startedAt, finishedAt, sentAt)
-            }}
-            onStartTyping={startTyping}
-            onStopTyping={stopTyping}
-            kind={selectedConversation.data.kind}
-            historyVisibility={selectedConversation.data.historyVisibility}
-            mutedUntil={selectedConversation.data.mutedUntil}
-          />
-        )}
-      </div>
+
+          {searching && (
+            <SearchPanel
+              api={client}
+              onJumpTo={(conversationId) => {
+                setSelectedId(conversationId)
+                setSearching(false)
+              }}
+            />
+          )}
+
+          {creatingGroup && (
+            <CreateGroupForm
+              client={client}
+              onCreated={(conversationId) => {
+                setCreatingGroup(false)
+                setSelectedId(conversationId)
+              }}
+            />
+          )}
+        </div>
+      )}
+
+      {(!layout.isMobile || selectedId !== null) && (
+        <div className="chat-main">
+          {layout.isMobile && selectedId !== null && (
+            <div style={{ padding: '8px', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)' }}>
+              <button type="button" className="btn-secondary" onClick={() => { setSelectedId(null); }}>
+                &larr; Back to chats
+              </button>
+            </div>
+          )}
+          {selectedId === null || !selectedConversation.data ? (
+            <div className="empty-state">
+              <p>Choose a conversation to start chatting.</p>
+            </div>
+          ) : (
+            <ConversationView
+              conversationId={selectedId}
+              currentEmployeeId={currentEmployeeId}
+              client={client}
+              connected={connected}
+              typing={typing[selectedId] ?? []}
+              names={{}}
+              incoming={incoming}
+              deletedIds={deleted[selectedId] ?? NO_DELETIONS}
+              onStartTyping={startTyping}
+              onStopTyping={stopTyping}
+              kind={selectedConversation.data.kind}
+              historyVisibility={selectedConversation.data.historyVisibility}
+              mutedUntil={selectedConversation.data.mutedUntil}
+            />
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -115,7 +115,9 @@ services:
       - '127.0.0.1:5672:5672'
       - '127.0.0.1:${RABBITMQ_MANAGEMENT_PORT}:15672'
     healthcheck:
-      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'check_running', '&&', 'rabbitmq-diagnostics', '-q', 'check_local_alarms']
+      # CMD-SHELL, not CMD: in exec form the && reached rabbitmq-diagnostics as a literal argument,
+      # the check failed with "too many arguments", and the container never became healthy.
+      test: ['CMD-SHELL', 'rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms']
       interval: 15s
       timeout: 10s
       retries: 10
@@ -152,7 +154,9 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\\nHost: localhost\\nConnection: close\\n\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"
+        # CRLF, not LF: Keycloak's HTTP server answers a bare-LF request with 400, so the old probe
+        # never passed. And "UP" without assuming spacing — the body is compact JSON.
+        - "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"UP\"'"
       interval: 15s
       timeout: 10s
       retries: 20

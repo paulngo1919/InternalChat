@@ -145,6 +145,8 @@ public static class ChatTopology
         // (FR-036). A distinct event type from chat.membership.changed.v1, so its own queue and
         // binding, the same reasoning realtime.fanout and membership.fanout already split on.
         new("readstate.fanout", "chat.read_state.#", PrefetchCount: 8),
+
+        new("export.requested.v1", "export.requested.#", PrefetchCount: 1),
     ];
 
     /// <summary>Retry queue name for a given queue and attempt.</summary>

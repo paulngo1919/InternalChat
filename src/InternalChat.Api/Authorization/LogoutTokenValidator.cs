@@ -77,7 +77,7 @@ public sealed class LogoutTokenValidator
         TokenValidationParameters parameters = new()
         {
             ValidateIssuer = true,
-            ValidIssuer = _options.Authority,
+            ValidIssuer = _options.ExpectedIssuer,
 
             ValidateAudience = true,
             ValidAudience = _options.Audience,

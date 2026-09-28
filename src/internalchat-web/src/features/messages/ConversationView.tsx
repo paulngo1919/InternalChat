@@ -38,11 +38,6 @@ interface ConversationViewProps {
    * these arriving later — possible now that fan-out is concurrent — is still shown as deleted.
    */
   readonly deletedIds?: readonly string[]
-  /**
-   * An own send, timed: client time before and after, and the server's `sentAt` from the response.
-   * The delivery-telemetry clock-offset estimate is built from these (002 FR-011).
-   */
-  readonly onSendTimed?: (startedAt: number, finishedAt: number, serverSentAt: string) => void
   readonly kind: 'direct' | 'group'
   readonly historyVisibility: 'from_join' | 'full'
   /** This employee's own mute for this conversation (FR-037). Access is unaffected either way. */
@@ -61,7 +56,6 @@ export function ConversationView({
   onStopTyping,
   incoming,
   deletedIds = [],
-  onSendTimed,
   kind,
   historyVisibility,
   mutedUntil,
@@ -134,18 +128,10 @@ export function ConversationView({
     [conversationId],
   )
 
-  // Read through a ref: the queue below must be built once per client, and a callback prop that
-  // changes identity every render would otherwise rebuild it — dropping its subscribers mid-send.
-  const onSendTimedRef = useRef(onSendTimed)
-  useEffect(() => {
-    onSendTimedRef.current = onSendTimed
-  }, [onSendTimed])
-
   const queue = useMemo(
     () =>
       new OfflineQueue(async (message: QueuedMessage): Promise<SendOutcome> => {
         try {
-          const startedAt = Date.now()
           const result = await client.sendMessage(
             message.conversationId,
             message.clientMessageKey,
@@ -153,11 +139,6 @@ export function ConversationView({
             message.mentions,
             message.attachmentIds,
           )
-
-          // A replay carries the original sentAt, so only a fresh send is a clock probe.
-          if (!result.wasReplay) {
-            onSendTimedRef.current?.(startedAt, Date.now(), result.message.sentAt)
-          }
 
           // A replay is a success, not a conflict. The server returned the message this key already
           // produced, so applying it reconciles the optimistic bubble with the real one.
@@ -271,7 +252,9 @@ export function ConversationView({
         
         {kind === 'group' && (
           <div className="group-members-container">
-            <button type="button" className="btn-secondary" onClick={() => setShowMembers(v => !v)}>
+            <button type="button" className="btn-secondary" onClick={() => {
+                setShowMembers((v) => !v)
+              }}>
               <Users size={16} /> Members
             </button>
             {showMembers && (

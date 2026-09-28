@@ -11,7 +11,8 @@
  * behaviour that people notice immediately when it is wrong.
  */
 
-import { Virtuoso } from 'react-virtuoso'
+import { useRef, useState } from 'react'
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 
 import { ImagePreview } from '../attachments/ImagePreview'
 import type { AttachmentResponse, MessageResponse } from '../../lib/api/messages'
@@ -137,8 +138,13 @@ export function MessageList({
     })),
   ]
 
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
+  const [isAtBottom, setIsAtBottom] = useState(true)
+
   return (
     <Virtuoso
+      key={rows.length === 0 ? 'empty' : 'loaded'}
+      ref={virtuosoRef}
       style={{ flex: 1, overflowX: 'hidden' }}
       data={rows}
       // Space under the last message. A Footer rather than CSS on .virtuoso-item-list: Virtuoso
@@ -148,8 +154,10 @@ export function MessageList({
       // Anchors the view to the newest message and keeps it there as messages arrive — unless the
       // reader has scrolled up, in which case it leaves them where they are. Yanking somebody back
       // to the bottom mid-read is the single most irritating thing a chat list can do.
-      followOutput="auto"
-      initialTopMostItemIndex={Math.max(rows.length - 1, 0)}
+      atBottomStateChange={setIsAtBottom}
+      followOutput={() => isAtBottom ? 'auto' : false}
+      alignToBottom={true}
+      initialTopMostItemIndex={{ index: 'LAST', align: 'end' }}
       startReached={() => {
         if (hasOlder) {
           onLoadOlder()

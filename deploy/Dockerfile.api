@@ -52,8 +52,8 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine3.22@sha256:86b43b7250c683781587
 
 # wget backs the HEALTHCHECK below; the alpine runtime image does not ship curl.
 RUN apk add --no-cache wget=1.25.0-r1 \
-    && addgroup -g 64198 -S app \
-    && adduser -u 64198 -S -G app -h /app -s /sbin/nologin app
+    && addgroup -g 64198 -S chat \
+    && adduser -u 64198 -S -G chat -h /app -s /sbin/nologin chat
 
 WORKDIR /app
 COPY --from=publish --chown=root:root --chmod=555 /app/publish ./
@@ -68,6 +68,6 @@ EXPOSE 8080
 USER 64198:64198
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
-    CMD wget --quiet --tries=1 --spider http://localhost:8080/health/ready || exit 1
+    CMD wget --quiet --tries=1 -O /dev/null http://localhost:8080/health/ready || exit 1
 
 ENTRYPOINT ["dotnet", "InternalChat.Api.dll"]

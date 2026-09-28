@@ -52,15 +52,13 @@
       "baseUrl": "/",
       "redirectUris": [
         "http://localhost:8080/*",
-        "https://localhost:8443/*"
-      ],
+        "https://localhost:8443/*", "https://chat.benda.io.vn/*"],
       "webOrigins": [
         "http://localhost:8080",
-        "https://localhost:8443"
-      ],
+        "https://localhost:8443", "https://chat.benda.io.vn"],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:8080/*##https://localhost:8443/*",
+        "post.logout.redirect.uris": "http://localhost:8080/*##https://localhost:8443/*##https://chat.benda.io.vn/*",
         "backchannel.logout.url": "http://api:8080/api/v1/auth/backchannel-logout",
         "backchannel.logout.session.required": "true",
         "backchannel.logout.revoke.offline.tokens": "false"

@@ -23,6 +23,21 @@ public sealed class ChatAuthenticationOptions
     public string Authority { get; set; } = string.Empty;
 
     /// <summary>
+    /// The <c>iss</c> tokens must carry, when it differs from <see cref="Authority"/>.
+    /// </summary>
+    /// <remarks>
+    /// Needed whenever the browser reaches Keycloak at a different address from the API — behind a
+    /// public hostname, for instance (<c>https://chat.example/realms/internalchat</c>) while the API
+    /// fetches metadata from <c>http://keycloak:8080</c> on the container network. Keycloak stamps
+    /// the address the <em>browser</em> used, so without this every token is rejected for issuer
+    /// mismatch. Empty means "the same as <see cref="Authority"/>".
+    /// </remarks>
+    public string Issuer { get; set; } = string.Empty;
+
+    /// <summary>The issuer tokens are validated against: <see cref="Issuer"/> if set, else <see cref="Authority"/>.</summary>
+    public string ExpectedIssuer => string.IsNullOrWhiteSpace(Issuer) ? Authority : Issuer;
+
+    /// <summary>
     /// Required <c>aud</c> claim.
     /// </summary>
     /// <remarks>

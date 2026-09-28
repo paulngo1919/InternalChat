@@ -1,0 +1,62 @@
+# -----------------------------------------------------------------------------
+# Public deployment behind a Cloudflare Tunnel — https://chat.benda.io.vn
+#
+# An OVERRIDE, layered on docker-compose.yml:
+#
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.public.yml up -d --build
+#
+# or simply:  powershell -File deploy/scripts/Start-Public.ps1
+#
+# What it changes, and why (see deploy/PUBLIC.md for the whole picture):
+#
+#   nginx     one plain-HTTP origin on 127.0.0.1:${PUBLIC_PORT:-8090} (nginx/public.conf) that the
+#             tunnel forwards to. Loopback only: nothing on the LAN reaches it except via Cloudflare.
+#             The base file's TLS listeners and ports are dropped — Cloudflare terminates TLS.
+#   keycloak  trusts X-Forwarded-* from nginx, so a browser on https://chat... gets tokens, redirects,
+#             and an issuer that say https://chat..., while http://localhost:${KEYCLOAK_PORT} keeps
+#             working for local development (the hostname stays dynamic, per request).
+#   web       built with the public OIDC authority; the API and hub stay same-origin (/api/v1).
+#   api       expects the public issuer in tokens (Keycloak__Issuer) while still fetching keys from
+#             Keycloak over the container network.
+#
+# Set PUBLIC_HOST in deploy/.env to publish under a different hostname.
+# -----------------------------------------------------------------------------
+
+services:
+  keycloak:
+    environment:
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME_STRICT: 'false'
+
+  web:
+    build:
+      args:
+        VITE_OIDC_AUTHORITY: https://${PUBLIC_HOST:-chat.benda.io.vn}/realms/${KEYCLOAK_REALM}
+        VITE_OIDC_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
+        VITE_API_BASE_URL: /api/v1
+
+  api:
+    environment:
+      Keycloak__Issuer: https://${PUBLIC_HOST:-chat.benda.io.vn}/realms/${KEYCLOAK_REALM}
+      # The API reaches Keycloak on the container network over plain HTTP; TLS is Cloudflare's job.
+      Keycloak__RequireHttpsMetadata: 'false'
+      Cors__AllowedOrigins: https://${PUBLIC_HOST:-chat.benda.io.vn}
+
+  nginx:
+    volumes: !override
+      - ./nginx/public.conf:/etc/nginx/nginx.conf:ro
+    ports: !override
+      - '127.0.0.1:${PUBLIC_PORT:-8090}:8090'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget --quiet --tries=1 --spider http://127.0.0.1:8090/healthz || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      api:
+        condition: service_started
+      web:
+        condition: service_started
+      keycloak:
+        condition: service_healthy

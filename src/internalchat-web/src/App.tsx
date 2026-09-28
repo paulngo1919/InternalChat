@@ -9,6 +9,7 @@ import { ChatShell } from './features/messages/ChatShell'
 import { NotificationCapability } from './features/notifications/NotificationCapability'
 import { NotificationSettings } from './features/notifications/NotificationSettings'
 import { RetentionNotice } from './features/settings/RetentionNotice'
+import { useLayoutState } from './features/layout/useLayoutState'
 import './App.css'
 
 /**
@@ -70,6 +71,9 @@ export default function App() {
     [api, loadSessions],
   )
 
+  const layout = useLayoutState();
+  const [mobileView, setMobileView] = useState<'sidebar' | 'chat'>('sidebar');
+
   if (error) {
     return (
       <main>
@@ -88,70 +92,91 @@ export default function App() {
 
   return (
     <div className="app-container">
-      <aside className="app-sidebar">
-        <header className="app-header">
-          <div className="profile-info">
-            <div className="avatar">
-              {me.displayName.charAt(0)}
+      {(!layout.isMobile || mobileView === 'sidebar') && (
+        <aside className="app-sidebar">
+          <header className="app-header">
+            <div className="profile-info">
+              <div className="avatar">
+                {me.displayName.charAt(0)}
+              </div>
+              <div>
+                <h1 data-testid="display-name" className="profile-name">{me.displayName}</h1>
+                <p className="profile-email">{me.email}</p>
+              </div>
             </div>
-            <div>
-              <h1 data-testid="display-name" className="profile-name">{me.displayName}</h1>
-              <p className="profile-email">{me.email}</p>
+            <button type="button" className="btn-secondary sign-out-btn" onClick={signOut}>
+              <LogOut size={16} /> Sign out
+            </button>
+          </header>
+
+          <div className="sidebar-sections">
+            {layout.isMobile && (
+              <button 
+                className="btn-primary" 
+                style={{ width: '100%', marginBottom: '16px' }}
+                onClick={() => { setMobileView('chat'); }}
+              >
+                Go to Chat
+              </button>
+            )}
+            
+            <NotificationCapability
+              canReceiveNotifications={me.canReceiveNotifications}
+              api={api}
+              onEnabled={() => {
+                void refreshMe()
+              }}
+            />
+
+            <section aria-labelledby="sessions-heading" className="settings-section">
+              <h2 id="sessions-heading">Your Devices</h2>
+              <ul className="session-list">
+                {sessions.map((session) => (
+                  <li key={session.id} data-testid="session" className="session-item">
+                    <div className="session-info">
+                      <span className="device-name">{session.userAgent || 'Unknown device'}</span>
+                      {session.isCurrent && <span className="current-badge">This device</span>}
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-danger-text"
+                      onClick={() => {
+                        void revoke(session.id)
+                      }}
+                    >
+                      Sign out
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <div className="settings-section">
+              <NotificationSettings api={api} />
+            </div>
+            <div className="settings-section">
+              <RetentionNotice api={api} />
             </div>
           </div>
-          <button type="button" className="btn-secondary sign-out-btn" onClick={signOut}>
-            <LogOut size={16} /> Sign out
-          </button>
-        </header>
+        </aside>
+      )}
 
-        <div className="sidebar-sections">
-          <NotificationCapability
-            canReceiveNotifications={me.canReceiveNotifications}
-            api={api}
-            onEnabled={() => {
-              void refreshMe()
-            }}
+      {(!layout.isMobile || mobileView === 'chat') && (
+        <main className="app-main">
+          {layout.isMobile && (
+            <div style={{ padding: '8px', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-light)' }}>
+              <button className="btn-secondary" onClick={() => { setMobileView('sidebar'); }}>
+                &larr; Back to Menu
+              </button>
+            </div>
+          )}
+          <ChatShell
+            authorized={api.authorized}
+            getAccessToken={getAccessToken}
+            currentEmployeeId={me.id}
           />
-
-          <section aria-labelledby="sessions-heading" className="settings-section">
-            <h2 id="sessions-heading">Your Devices</h2>
-            <ul className="session-list">
-              {sessions.map((session) => (
-                <li key={session.id} data-testid="session" className="session-item">
-                  <div className="session-info">
-                    <span className="device-name">{session.userAgent || 'Unknown device'}</span>
-                    {session.isCurrent && <span className="current-badge">This device</span>}
-                  </div>
-                  <button
-                    type="button"
-                    className="btn-danger-text"
-                    onClick={() => {
-                      void revoke(session.id)
-                    }}
-                  >
-                    Sign out
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <div className="settings-section">
-            <NotificationSettings api={api} />
-          </div>
-          <div className="settings-section">
-            <RetentionNotice api={api} />
-          </div>
-        </div>
-      </aside>
-
-      <main className="app-main">
-        <ChatShell
-          authorized={api.authorized}
-          getAccessToken={getAccessToken}
-          currentEmployeeId={me.id}
-        />
-      </main>
+        </main>
+      )}
     </div>
   )
 }

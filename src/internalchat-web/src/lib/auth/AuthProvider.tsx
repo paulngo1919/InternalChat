@@ -48,8 +48,6 @@ export function AuthProvider({ config, children }: AuthProviderProps) {
   const resuming = useRef(false)
 
   useEffect(() => {
-    let cancelled = false
-
     async function resume(): Promise<void> {
       if (resuming.current) return
       resuming.current = true

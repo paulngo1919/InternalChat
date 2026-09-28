@@ -24,7 +24,8 @@ interface StubProps {
   itemContent: (index: number, row: unknown) => React.ReactNode
   computeItemKey: (index: number, row: unknown) => string
   startReached: () => void
-  initialTopMostItemIndex: number
+  initialTopMostItemIndex: number | { index: number | 'LAST'; align?: string }
+  alignToBottom?: boolean
   followOutput: string
 }
 
@@ -236,18 +237,21 @@ describe('paging', () => {
       messages: [aMessage({ id: 'm1', seq: 1 }), aMessage({ id: 'm2', seq: 2 })],
     })
 
-    expect(captured.props?.initialTopMostItemIndex).toBe(1)
+    // Opens on the last row, aligned to the bottom edge, and a short conversation sits at the
+    // bottom of the pane rather than the top — where the composer and the newest message are.
+    expect(captured.props?.initialTopMostItemIndex).toEqual({ index: 'LAST', align: 'end' })
+    expect(captured.props?.alignToBottom).toBe(true)
 
     // Follows the bottom, but only while the reader is already there — yanking somebody back
     // mid-read is the single most irritating thing a chat list can do.
-    expect(captured.props?.followOutput).toBe('smooth')
+    expect(captured.props?.followOutput).toBe('auto')
   })
 
-  it('clamps the initial index for an empty conversation', () => {
+  it('never computes a negative initial index for an empty conversation', () => {
     renderList()
 
-    // rows.length - 1 is -1 with nothing to show, and a negative index throws inside virtuoso.
-    expect(captured.props?.initialTopMostItemIndex).toBe(0)
+    // 'LAST' rather than rows.length - 1, which is -1 with nothing to show and throws inside virtuoso.
+    expect(captured.props?.initialTopMostItemIndex).toEqual({ index: 'LAST', align: 'end' })
   })
 })
 

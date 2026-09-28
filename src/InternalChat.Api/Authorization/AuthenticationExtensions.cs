@@ -72,7 +72,7 @@ public static class AuthenticationExtensions
                 jwt.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuer = true,
-                    ValidIssuer = options.Authority,
+                    ValidIssuer = options.ExpectedIssuer,
 
                     ValidateAudience = true,
                     ValidAudience = options.Audience,

@@ -142,11 +142,23 @@ public sealed class StackFixture : IAsyncLifetime
     /// verify the test's own assumptions instead.
     /// </remarks>
     /// <param name="username">Realm username. Passwords equal usernames in the development realm.</param>
-    public async Task<string> IssueAccessTokenAsync(
+    public Task<string> IssueAccessTokenAsync(
         string username,
+        CancellationToken cancellationToken = default) =>
+        IssueAccessTokenViaAsync(username, RealmAuthority, cancellationToken);
+
+    /// <summary>
+    /// As <see cref="IssueAccessTokenAsync"/>, but requested through <paramref name="realmAuthority"/>,
+    /// which becomes the token's <c>iss</c> — how a browser behind a public hostname gets a token
+    /// whose issuer differs from the address the API talks to Keycloak on.
+    /// </summary>
+    public static async Task<string> IssueAccessTokenViaAsync(
+        string username,
+        string realmAuthority,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(username);
+        ArgumentException.ThrowIfNullOrWhiteSpace(realmAuthority);
 
         using HttpClient client = new();
         using FormUrlEncodedContent form = new(
@@ -159,7 +171,7 @@ public sealed class StackFixture : IAsyncLifetime
         ]);
 
         using HttpResponseMessage response = await client
-            .PostAsync(new Uri($"{RealmAuthority}/protocol/openid-connect/token"), form, cancellationToken)
+            .PostAsync(new Uri($"{realmAuthority}/protocol/openid-connect/token"), form, cancellationToken)
             .ConfigureAwait(false);
 
         string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);

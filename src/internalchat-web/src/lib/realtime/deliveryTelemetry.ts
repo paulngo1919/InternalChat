@@ -17,6 +17,7 @@
  * Best-effort throughout: a failed post is dropped, never retried, and never surfaced.
  */
 
+import type { MessagingClient } from '../api/messages'
 import type { ChatTransport } from './chatConnection'
 
 /** Upper bounds in ms — the server's bucket boundaries (002 data-model §6). */
@@ -26,6 +27,28 @@ const OVERFLOW = '+Inf'
 
 /** How often counts are posted. The server allows two a minute per employee. */
 const FLUSH_INTERVAL_MS = 60_000
+
+/**
+ * Wraps a messaging client so every fresh send feeds the clock-offset estimate.
+ *
+ * A replay carries the original `sentAt`, so only a newly created message is a clock probe. Done
+ * here, outside any component, so the timing is plainly not a render-time side effect.
+ */
+export function withSendTiming(client: MessagingClient, telemetry: DeliveryTelemetry): MessagingClient {
+  return {
+    ...client,
+    sendMessage: async (...args: Parameters<MessagingClient['sendMessage']>) => {
+      const startedAt = Date.now()
+      const result = await client.sendMessage(...args)
+
+      if (!result.wasReplay) {
+        telemetry.observeRoundTrip(startedAt, Date.now(), result.message.sentAt)
+      }
+
+      return result
+    },
+  }
+}
 
 /** Posts a report. Given the authorized fetch, so the token handling is shared with every other call. */
 export type TelemetryPost = (path: string, init: RequestInit) => Promise<Response>

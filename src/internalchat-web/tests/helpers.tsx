@@ -215,6 +215,9 @@ export function fakeApiClient(overrides: Partial<ApiClient> = {}): ApiClient {
     ),
     updateNotificationPreferences: vi.fn((preferences) => Promise.resolve(preferences)),
     registerPushSubscription: vi.fn(() => Promise.resolve()),
+    getRetentionPolicy: vi.fn(() =>
+      Promise.resolve({ retentionMonths: 12, appliesFrom: '2026-01-01T00:00:00Z', nextSweepAt: '2026-10-01T00:00:00Z' }),
+    ),
     ...overrides,
   }
 }

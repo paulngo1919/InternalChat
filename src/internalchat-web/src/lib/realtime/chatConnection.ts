@@ -166,6 +166,10 @@ export class ChatConnection {
   /** Set by `stop()`, so nothing reconnects a screen that has been closed. */
   private stopped = false
 
+  private isStopped(): boolean {
+    return this.stopped
+  }
+
   private manualRetry: ReturnType<typeof setTimeout> | undefined
 
   /**
@@ -205,7 +209,9 @@ export class ChatConnection {
         await this.connection.stop()
       }
 
-      if (this.stopped) {
+      // Read through a method: `stop()` may have been called while awaiting, which TypeScript's
+      // narrowing from the check above cannot see.
+      if (this.isStopped()) {
         return
       }
 

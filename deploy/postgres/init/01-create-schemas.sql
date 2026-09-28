@@ -11,3 +11,8 @@ CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 
 -- Create the app user for development
 CREATE ROLE internalchat_app WITH LOGIN PASSWORD 'change-me-postgres-app';
+
+-- Ensure the app user can access tables created by the migrations (run by the owner)
+GRANT USAGE ON SCHEMA public TO internalchat_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE internalchat IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO internalchat_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE internalchat IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO internalchat_app;

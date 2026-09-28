@@ -126,11 +126,23 @@ body::after {
 
 /* Input group buttons (password visibility toggle) */
 .pf-v5-c-button.pf-m-control {
-    background: rgba(15, 23, 42, 0.5) !important;
+    background: transparent !important;
     border: 1px solid rgba(255, 255, 255, 0.2) !important;
     border-left: none !important;
     color: white !important;
     border-radius: 0 12px 12px 0 !important;
+}
+
+.pf-v5-c-input-group {
+    background: rgba(15, 23, 42, 0.5) !important;
+    border-radius: 12px !important;
+}
+
+.pf-v5-c-input-group .pf-v5-c-form-control {
+    background: transparent !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border-right: none !important;
+    border-radius: 12px 0 0 12px !important;
 }
 
 /* Buttons */

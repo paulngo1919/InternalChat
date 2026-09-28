@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { Plus, Search, ChevronLeft } from 'lucide-react'
+import { ChevronLeft, Menu, Plus, Search } from 'lucide-react'
 
 import {
   createMessagingClient,
@@ -20,6 +20,7 @@ import { readHubBaseUrl } from '../../lib/auth/config'
 import { ChatConnection, type ChatTransport } from '../../lib/realtime/chatConnection'
 import { DeliveryTelemetry, withSendTiming } from '../../lib/realtime/deliveryTelemetry'
 import { ConversationList } from '../conversations/ConversationList'
+import { titleOf } from '../conversations/conversationTitle'
 import { applyIncomingToConversationList } from '../conversations/conversationListCache'
 import { CreateGroupForm } from '../conversations/GroupSettings'
 import { conversationsQueryKey } from '../conversations/queryKeys'
@@ -33,13 +34,23 @@ interface ChatShellProps {
   readonly authorized: (path: string, init?: RequestInit) => Promise<Response>
   readonly getAccessToken: () => Promise<string | null>
   readonly currentEmployeeId: string
+  /**
+   * Phone width only: opens the profile-and-settings screen. On a phone the chat list is the home
+   * screen and owns the one way into the menu; wider layouts show the menu alongside and pass none.
+   */
+  readonly onOpenMenu?: (() => void) | undefined
 }
 
 /** Shared so an untouched conversation does not hand ConversationView a new array every render. */
 const NO_DELETIONS: readonly string[] = []
 
 /** The messaging screen. */
-export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: ChatShellProps) {
+export function ChatShell({
+  authorized,
+  getAccessToken,
+  currentEmployeeId,
+  onOpenMenu,
+}: ChatShellProps) {
   // 002 FR-011 — what delivery felt like here, reported in aggregate once a minute. The client is
   // wrapped so each fresh send also refines the clock-offset estimate the report depends on.
   const [telemetry] = useState(() => new DeliveryTelemetry(authorized))
@@ -219,6 +230,21 @@ export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: Cha
 
       {(!layout.isMobile || selectedId === null) && (
         <div className="chat-sidebar">
+          {layout.isMobile && (
+            <header className="mobile-top-bar">
+              <h1 className="mobile-top-bar__title">Chats</h1>
+              {onOpenMenu && (
+                <button
+                  type="button"
+                  className="mobile-icon-button"
+                  aria-label="Menu"
+                  onClick={onOpenMenu}
+                >
+                  <Menu size={22} aria-hidden="true" />
+                </button>
+              )}
+            </header>
+          )}
           <ConversationList client={client} selectedId={selectedId} onSelect={setSelectedId} />
 
           <div className="sidebar-actions">
@@ -275,12 +301,21 @@ export function ChatShell({ authorized, getAccessToken, currentEmployeeId }: Cha
       {(!layout.isMobile || selectedId !== null) && (
         <div className="chat-main">
           {layout.isMobile && selectedId !== null && (
-            <div className="mobile-nav-bar">
-              <button type="button" className="mobile-nav-back" onClick={() => { setSelectedId(null); }}>
-                <ChevronLeft size={20} />
-                <span>Chats</span>
+            <header className="mobile-top-bar" data-testid="mobile-conversation-bar">
+              <button
+                type="button"
+                className="mobile-icon-button"
+                aria-label="Back to chats"
+                onClick={() => {
+                  setSelectedId(null)
+                }}
+              >
+                <ChevronLeft size={24} aria-hidden="true" />
               </button>
-            </div>
+              <h1 className="mobile-top-bar__title">
+                {selectedConversation.data ? titleOf(selectedConversation.data) : ''}
+              </h1>
+            </header>
           )}
           {selectedId === null || !selectedConversation.data ? (
             <div className="empty-state">

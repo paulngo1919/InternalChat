@@ -138,8 +138,16 @@ export function MeetingPanel({ conversationId, client, currentEmployeeId }: Meet
   return (
     <section aria-label="Meeting" className="meeting-panel">
       {meeting === null ? (
-        <button type="button" className="btn-secondary" onClick={start} disabled={busy} data-testid="start-meeting">
-          {busy ? <><Video size={16} /> Starting…</> : <><Video size={16} /> Start a meeting</>}
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={start}
+          disabled={busy}
+          aria-label={busy ? 'Starting…' : 'Start a meeting'}
+          data-testid="start-meeting"
+        >
+          <Video size={16} aria-hidden="true" />
+          <span className="btn-label">{busy ? 'Starting…' : 'Start a meeting'}</span>
         </button>
       ) : (
         <JoinPrompt meeting={meeting} onJoin={join} joining={busy} />

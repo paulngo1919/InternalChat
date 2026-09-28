@@ -8,25 +8,14 @@
 
 import { useQuery } from '@tanstack/react-query'
 
-import type { ConversationResponse, MessagingClient } from '../../lib/api/messages'
+import type { MessagingClient } from '../../lib/api/messages'
+import { titleOf } from './conversationTitle'
 import { conversationsQueryKey } from './queryKeys'
 
 interface ConversationListProps {
   readonly client: MessagingClient
   readonly selectedId: string | null
   readonly onSelect: (conversationId: string) => void
-}
-
-/** How a conversation is labelled when it has no name of its own. */
-function titleOf(conversation: ConversationResponse): string {
-  if (conversation.name) {
-    return conversation.name
-  }
-
-  // A direct conversation is named by who is in it, and the participant list arrives with the
-  // members endpoint rather than the list projection. Until the list carries a counterparty name,
-  // saying "Direct message" is better than rendering a raw UUID at somebody.
-  return conversation.kind === 'direct' ? 'Direct message' : 'Untitled conversation'
 }
 
 /** The signed-in employee's conversations, most recently active first. */

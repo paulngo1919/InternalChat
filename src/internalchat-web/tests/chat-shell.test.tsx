@@ -412,3 +412,77 @@ describe('search', () => {
     expect(screen.queryByTestId('search-input')).not.toBeInTheDocument()
   })
 })
+
+/**
+ * Phone-width navigation (003 US3). One screen at a time, and exactly one way back from each: a
+ * conversation has a single top bar — back to the list plus the conversation's name — and the list
+ * owns the way into the menu. Two stacked back buttons ("Menu" over "Chats") cost a tenth of a small
+ * screen and the outer one skipped the list entirely.
+ */
+describe('on a phone', () => {
+  let width: number
+
+  beforeEach(() => {
+    width = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 })
+  })
+
+  afterEach(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+  })
+
+  it('opens on the list, headed "Chats", with the menu one tap away', async () => {
+    const onOpenMenu = vi.fn()
+    const { authorized } = authorizedFor({
+      '/conversations?': { items: [aConversation({ id: 'c1', name: 'Design' })], nextCursor: null },
+    })
+
+    renderWithProviders(
+      <ChatShell
+        authorized={authorized}
+        getAccessToken={() => Promise.resolve('token')}
+        currentEmployeeId="e1"
+        onOpenMenu={onOpenMenu}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: 'Chats' })).toBeInTheDocument()
+    await screen.findByTestId('conversation-item')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Menu' }))
+    expect(onOpenMenu).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a conversation under one bar: back to the list, and its name', async () => {
+    renderShell()
+
+    fireEvent.click(await screen.findByTestId('conversation-item'))
+
+    const bar = await screen.findByTestId('mobile-conversation-bar')
+    // The name arrives with the conversation query; the bar is there before it, so nothing jumps.
+    await waitFor(() => {
+      expect(bar).toHaveTextContent('Design')
+    })
+    expect(screen.getAllByRole('button', { name: 'Back to chats' })).toHaveLength(1)
+    // The list is gone: one screen at a time.
+    expect(screen.queryByTestId('conversation-item')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to chats' }))
+
+    expect(await screen.findByTestId('conversation-item')).toBeInTheDocument()
+    expect(screen.queryByTestId('mobile-conversation-bar')).not.toBeInTheDocument()
+  })
+})
+
+describe('on a wide screen', () => {
+  it('shows the list and the conversation side by side, with no phone bars', async () => {
+    renderShell()
+
+    fireEvent.click(await screen.findByTestId('conversation-item'))
+    await screen.findByTestId('virtuoso')
+
+    expect(screen.getByTestId('conversation-item')).toBeInTheDocument()
+    expect(screen.queryByTestId('mobile-conversation-bar')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Back to chats' })).not.toBeInTheDocument()
+  })
+})

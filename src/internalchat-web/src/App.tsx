@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { LogOut, ChevronLeft, MessageSquare } from 'lucide-react'
+import { ChevronLeft, LogOut } from 'lucide-react'
 
 import { createApiClient, type CurrentEmployee, type Session } from './lib/api/client'
 import { readApiBaseUrl } from './lib/auth/config'
@@ -12,6 +12,7 @@ import { RetentionNotice } from './features/settings/RetentionNotice'
 import { useLayoutState } from './features/layout/useLayoutState'
 import { ThemeToggle } from './features/layout/ThemeToggle'
 import { useTheme } from './features/layout/useTheme'
+import { OfflineBanner } from './features/pwa/OfflineBanner'
 import './App.css'
 
 /**
@@ -76,8 +77,9 @@ export default function App() {
     [api, loadSessions],
   )
 
-  const layout = useLayoutState();
-  const [mobileView, setMobileView] = useState<'sidebar' | 'chat'>('sidebar');
+  const layout = useLayoutState()
+  // Phone width only. The chat list is home; the menu is a screen you visit and come back from.
+  const [mobileView, setMobileView] = useState<'menu' | 'chat'>('chat')
 
   if (error) {
     return (
@@ -97,8 +99,24 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {(!layout.isMobile || mobileView === 'sidebar') && (
+      <OfflineBanner />
+      {(!layout.isMobile || mobileView === 'menu') && (
         <aside className="app-sidebar">
+          {layout.isMobile && (
+            <header className="mobile-top-bar">
+              <button
+                type="button"
+                className="mobile-icon-button"
+                aria-label="Back to chats"
+                onClick={() => {
+                  setMobileView('chat')
+                }}
+              >
+                <ChevronLeft size={24} aria-hidden="true" />
+              </button>
+              <h1 className="mobile-top-bar__title">Settings</h1>
+            </header>
+          )}
           <header className="app-header">
             <div className="profile-info">
               <div className="avatar">
@@ -115,17 +133,6 @@ export default function App() {
           </header>
 
           <div className="sidebar-sections">
-            {layout.isMobile && (
-              <button 
-                className="mobile-nav-action"
-                onClick={() => { setMobileView('chat'); }}
-              >
-                <MessageSquare size={18} />
-                <span>Open Chat</span>
-                <ChevronLeft size={16} className="mobile-nav-chevron-right" />
-              </button>
-            )}
-            
             <div className="settings-section">
               <ThemeToggle />
             </div>
@@ -173,18 +180,17 @@ export default function App() {
 
       {(!layout.isMobile || mobileView === 'chat') && (
         <main className="app-main">
-          {layout.isMobile && (
-            <div className="mobile-nav-bar">
-              <button className="mobile-nav-back" onClick={() => { setMobileView('sidebar'); }}>
-                <ChevronLeft size={20} />
-                <span>Menu</span>
-              </button>
-            </div>
-          )}
           <ChatShell
             authorized={api.authorized}
             getAccessToken={getAccessToken}
             currentEmployeeId={me.id}
+            onOpenMenu={
+              layout.isMobile
+                ? () => {
+                    setMobileView('menu')
+                  }
+                : undefined
+            }
           />
         </main>
       )}

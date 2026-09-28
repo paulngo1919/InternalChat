@@ -486,12 +486,48 @@ describe('App', () => {
 
     expect(devices).toHaveLength(2)
     expect(at(devices, 0)).toHaveTextContent('Firefox on Linux')
-    expect(at(devices, 0)).toHaveTextContent('(this device)')
+    expect(at(devices, 0)).toHaveTextContent('This device')
 
     // A session whose user agent the server never captured. An empty row gives the person nothing
     // to recognise, and this is the list they use to spot a device that is not theirs.
     expect(at(devices, 1)).toHaveTextContent('Unknown device')
-    expect(at(devices, 1)).not.toHaveTextContent('(this device)')
+    expect(at(devices, 1)).not.toHaveTextContent('This device')
+  })
+
+  describe('on a phone', () => {
+    let width: number
+
+    beforeEach(() => {
+      width = window.innerWidth
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 })
+    })
+
+    afterEach(() => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+    })
+
+    it('opens on the chat list, not the menu', async () => {
+      await renderApp()
+
+      // People open a chat app to chat; the menu is somewhere you go, not where you land.
+      expect(await screen.findByRole('heading', { name: 'Chats' })).toBeInTheDocument()
+      expect(screen.queryByTestId('display-name')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /open chat/i })).not.toBeInTheDocument()
+    })
+
+    it('goes to the menu and back with one control each way', async () => {
+      await renderApp()
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Menu' }))
+
+      expect(await screen.findByTestId('display-name')).toHaveTextContent('An Nguyen')
+      expect(screen.queryByRole('heading', { name: 'Chats' })).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Back to chats' }))
+
+      expect(await screen.findByRole('heading', { name: 'Chats' })).toBeInTheDocument()
+      expect(screen.queryByTestId('display-name')).not.toBeInTheDocument()
+    })
   })
 
   it('revokes a device and refreshes the list', async () => {

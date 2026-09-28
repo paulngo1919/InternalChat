@@ -245,17 +245,33 @@ export function ConversationView({
     <section aria-label="Conversation" className="chat-view-container">
       <div className="chat-view-header">
         <div className="chat-view-actions">
-          <button type="button" className="btn-secondary" onClick={toggleMute} aria-pressed={muted} data-testid="mute-toggle">
-            {muted ? <><Bell size={16} /> Unmute Notifications</> : <><BellOff size={16} /> Mute Notifications</>}
+          {/* The label is hidden at phone width (icon only); aria-label keeps the name for everyone. */}
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={toggleMute}
+            aria-pressed={muted}
+            aria-label={muted ? 'Unmute Notifications' : 'Mute Notifications'}
+            data-testid="mute-toggle"
+          >
+            {muted ? <Bell size={16} aria-hidden="true" /> : <BellOff size={16} aria-hidden="true" />}
+            <span className="btn-label">{muted ? 'Unmute Notifications' : 'Mute Notifications'}</span>
           </button>
         </div>
         
         {kind === 'group' && (
           <div className="group-members-container">
-            <button type="button" className="btn-secondary" onClick={() => {
+            <button
+              type="button"
+              className="btn-secondary"
+              aria-label="Members"
+              aria-expanded={showMembers}
+              onClick={() => {
                 setShowMembers((v) => !v)
-              }}>
-              <Users size={16} /> Members
+              }}
+            >
+              <Users size={16} aria-hidden="true" />
+              <span className="btn-label">Members</span>
             </button>
             {showMembers && (
               <GroupMembers

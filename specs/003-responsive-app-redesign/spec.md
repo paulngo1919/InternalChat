@@ -52,6 +52,9 @@ Users on mobile devices (smartphones) should see a fully mobile-optimized, singl
 
 1. **Given** a user opens the application on a mobile device, **When** the screen width is < 768px, **Then** a single-column layout is used.
 2. **Given** a user is viewing the channel list on mobile, **When** they select a channel, **Then** the view transitions completely to the message list for that channel with a "back" button to return.
+3. **Given** a user opens the application on a mobile device, **When** it loads, **Then** they land on the conversation list, headed "Chats", with a single menu button leading to profile and settings.
+4. **Given** a user is in a conversation on mobile, **When** they look at the top of the screen, **Then** there is exactly one bar — back to the list plus the conversation's name — and no second back control; conversation tools are icon-only buttons of at least 44×44px whose names remain available to assistive technology.
+5. **Given** a user is in the menu on mobile, **When** they press back, **Then** they return to the conversation list.
 
 ### Edge Cases
 

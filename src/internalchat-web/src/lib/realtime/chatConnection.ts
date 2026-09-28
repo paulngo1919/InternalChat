@@ -317,6 +317,13 @@ export class ChatConnection {
 
     this.connection.onclose(() => {
       this.options.onConnectionStateChanged?.(false)
+      
+      // If the connection was closed by the server (e.g. token expired and aborted by RevocationSweepService)
+      // or due to an unrecoverable error, the built-in automatic reconnect does not run.
+      // We must manually trigger a reconnect if the user hasn't explicitly stopped the connection.
+      if (!this.stopped) {
+        void this.reconnectNow(0)
+      }
     })
   }
 

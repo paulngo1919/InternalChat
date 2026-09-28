@@ -14,6 +14,7 @@ import { Search, Plus, X, Check } from 'lucide-react'
 
 import type { EmployeeSummary } from '../../lib/api/client'
 import type { MessagingClient } from '../../lib/api/messages'
+import { Spinner } from '../../components/loading/Skeletons'
 import { conversationsQueryKey, membersQueryKey } from './queryKeys'
 
 interface CreateGroupFormProps {
@@ -181,7 +182,7 @@ export function GroupMembers({ conversationId, client, currentEmployeeId }: Grou
   }, [client, query])
 
   if (members.isPending) {
-    return <p>Loading members…</p>
+    return <Spinner label="Loading members…" />
   }
 
   if (members.isError) {

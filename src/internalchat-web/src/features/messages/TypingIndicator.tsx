@@ -45,9 +45,14 @@ export function TypingIndicator({ typing, names }: TypingIndicatorProps) {
   return (
     // `polite`, not `assertive`: a screen reader should mention this between utterances, not
     // interrupt the message someone is reading to announce that a colleague is typing.
-    <p role="status" aria-live="polite" data-testid="typing-indicator">
-      {describe(typing, names)}
-    </p>
+    <div className="typing-indicator-wrapper" role="status" aria-live="polite" data-testid="typing-indicator">
+      <div className="typing-indicator-bubble">
+        <span className="typing-dot"></span>
+        <span className="typing-dot"></span>
+        <span className="typing-dot"></span>
+      </div>
+      <span className="typing-indicator-text">{describe(typing, names)}</span>
+    </div>
   )
 }
 

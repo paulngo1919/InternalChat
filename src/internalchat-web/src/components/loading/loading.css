@@ -1,0 +1,323 @@
+/*
+ * Loading states: the full-screen splash, skeletons, and the inline spinner.
+ *
+ * The splash rules are duplicated, minified, in index.html so the pre-script first paint matches.
+ * Change one, change both.
+ */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ─── Full-screen splash ─────────────────────────────────────────────────────── */
+
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background:
+    radial-gradient(60% 50% at 50% 42%, var(--accent-transparent), transparent 70%),
+    var(--bg-base);
+  color: var(--text-primary);
+  /* Held back briefly: a load that finishes inside this window never shows a splash at all. */
+  opacity: 0;
+  animation: loading-fade-in 0.4s ease-out 0.15s forwards;
+}
+
+.loading-screen__mark {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 18px;
+}
+
+/* A gradient arc sweeping round the logo. The mask cuts the conic fill down to a 3px ring. */
+.loading-screen__orbit {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 55%, var(--accent-primary) 80%, #6366f1 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  animation: loading-spin 1.1s linear infinite;
+}
+
+.loading-screen__logo {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  background: var(--accent-gradient);
+  color: #fff;
+  box-shadow: 0 10px 30px -8px var(--accent-primary);
+  animation: loading-breathe 2.2s ease-in-out infinite;
+}
+
+/* The typing dots inside the bubble, bouncing in turn. */
+.loading-screen__dot {
+  fill: var(--accent-hover);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: loading-dot 1.2s ease-in-out infinite;
+}
+
+.loading-screen__dot:nth-of-type(2) {
+  animation-delay: 0.15s;
+}
+
+.loading-screen__dot:nth-of-type(3) {
+  animation-delay: 0.3s;
+}
+
+.loading-screen__brand {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.loading-screen__message {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+/* Indeterminate: a short segment sliding across a hairline track. */
+.loading-screen__bar {
+  position: relative;
+  width: 160px;
+  height: 3px;
+  margin-top: 18px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border-light);
+}
+
+.loading-screen__bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  border-radius: inherit;
+  background: var(--accent-gradient);
+  animation: loading-slide 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+/* ─── Skeletons ──────────────────────────────────────────────────────────────── */
+
+.skeleton {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-surface-hover);
+  border-radius: 6px;
+}
+
+/* The shimmer: a soft highlight sweeping left to right over the placeholder. */
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--text-primary) 7%, transparent),
+    transparent
+  );
+  animation: loading-shimmer 1.6s ease-in-out infinite;
+}
+
+.skeleton--circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.skeleton--line {
+  height: 12px;
+}
+
+.skeleton--thin {
+  height: 10px;
+  opacity: 0.7;
+}
+
+.skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  opacity: 0;
+  animation: loading-rise 0.35s ease-out forwards;
+}
+
+.skeleton-row__lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skeleton-transcript {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 24px;
+  overflow: hidden;
+}
+
+.skeleton--bubble {
+  height: 40px;
+  min-width: 64px;
+  border-radius: 16px 16px 16px 4px;
+  opacity: 0;
+  animation: loading-rise 0.35s ease-out forwards;
+}
+
+.skeleton--mine {
+  align-self: flex-end;
+  border-radius: 16px 16px 4px 16px;
+  background: var(--accent-transparent);
+}
+
+/* ─── Inline spinner ─────────────────────────────────────────────────────────── */
+
+.inline-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent-primary);
+  animation: loading-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ─── Keyframes ──────────────────────────────────────────────────────────────── */
+
+@keyframes loading-fade-in {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes loading-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 10px 30px -8px var(--accent-primary);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 14px 40px -6px var(--accent-primary);
+  }
+}
+
+@keyframes loading-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+@keyframes loading-dot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.55;
+  }
+  30% {
+    transform: translateY(-2.5px);
+    opacity: 1;
+  }
+}
+
+@keyframes loading-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes loading-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * Reduced motion: nothing spins, slides, or shimmers. Everything is shown at once and still, and the
+ * status text carries the meaning. The splash keeps its fade (opacity only), which is not motion.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .loading-screen__orbit,
+  .loading-screen__logo,
+  .loading-screen__bar > span,
+  .loading-screen__dot,
+  .skeleton::after,
+  .spinner {
+    animation: none;
+  }
+
+  .loading-screen__bar > span {
+    width: 100%;
+    opacity: 0.5;
+  }
+
+  .skeleton-row,
+  .skeleton--bubble {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* Already on screen (the static first-paint copy, or the previous wait): no second fade. */
+.loading-screen--instant {
+  opacity: 1;
+  animation: none;
+}

@@ -11,12 +11,13 @@
  * behaviour that people notice immediately when it is wrong.
  */
 
-import { useRef, useState } from 'react'
+import { useRef, useState, forwardRef } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 
 import { ImagePreview } from '../attachments/ImagePreview'
 import type { AttachmentResponse, MessageResponse } from '../../lib/api/messages'
 import type { QueuedMessage } from '../../lib/messages/offlineQueue'
+import { TypingIndicator } from './TypingIndicator'
 
 /**
  * A send the server refused in a way retrying cannot fix (002 FR-004, US2 scenario 3).
@@ -50,6 +51,8 @@ interface MessageListProps {
    * polling is not wanted, in which case a pending attachment simply stays pending.
    */
   readonly refreshAttachment?: ((attachmentId: string) => Promise<AttachmentResponse>) | undefined
+  readonly typing?: readonly string[]
+  readonly names?: Readonly<Record<string, string>>
 }
 
 /** One row: a confirmed message, a still-sending one, or one the server refused. */
@@ -94,10 +97,16 @@ function MessageBody({
   )
 }
 
-/** Keeps the newest message off the bottom edge. Module-level so Virtuoso does not remount it. */
-function ListFooter() {
-  return <div aria-hidden="true" style={{ height: 10 }} />
-}
+/** Keeps the newest message off the bottom edge, and renders the typing indicator. */
+const ListFooter = forwardRef<HTMLDivElement, { context?: { typing: readonly string[], names: Readonly<Record<string, string>> } }>((props, ref) => {
+  return (
+    <div ref={ref}>
+      {props.context && <TypingIndicator typing={props.context.typing} names={props.context.names} />}
+      <div aria-hidden="true" style={{ height: 10 }} />
+    </div>
+  )
+})
+ListFooter.displayName = 'ListFooter'
 
 const VIRTUOSO_COMPONENTS = { Footer: ListFooter }
 
@@ -111,6 +120,8 @@ export function MessageList({
   onLoadOlder,
   hasOlder,
   refreshAttachment,
+  typing = [],
+  names = {},
 }: MessageListProps) {
   // Sorted by `seq`, never by `sentAt`. FR-012 makes the server sequence the ordering authority, and
   // contracts/signalr-hub.md requires clients to apply by `seq` rather than arrival time — a message
@@ -147,6 +158,7 @@ export function MessageList({
       ref={virtuosoRef}
       style={{ flex: 1, overflowX: 'hidden' }}
       data={rows}
+      context={{ typing, names }}
       // Space under the last message. A Footer rather than CSS on .virtuoso-item-list: Virtuoso
       // owns that element's padding (inline, it stands in for rows scrolled out of view), so
       // overriding it would throw off the scroll position.

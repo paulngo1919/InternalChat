@@ -1,28 +1,29 @@
 :root, [data-theme="dark"] {
-  /* Unique Dark Theme - Midnight Teal with Glassmorphism */
-  --bg-base: #061218;
-  --bg-surface: rgba(10, 24, 32, 0.65);
-  --bg-surface-hover: rgba(14, 32, 43, 0.75);
-  --bg-elevated: rgba(18, 40, 53, 0.85);
+  /* Ultra-Premium Midnight Obsidian & Cyber Teal */
+  --bg-base: #080d16;
+  --bg-surface: rgba(15, 23, 42, 0.75);
+  --bg-surface-hover: rgba(30, 41, 59, 0.85);
+  --bg-elevated: #0f172a;
 
-  --text-primary: #f1f5f9;
+  --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
 
   --accent-primary: #14b8a6;
   --accent-hover: #0d9488;
+  --accent-gradient: linear-gradient(135deg, #14b8a6 0%, #6366f1 100%);
   --accent-transparent: rgba(20, 184, 166, 0.15);
-  
+
   --danger: #ef4444;
   --danger-hover: #f87171;
   --danger-transparent: rgba(239, 68, 68, 0.15);
 
-  --border-light: rgba(255, 255, 255, 0.06);
-  --border-strong: rgba(255, 255, 255, 0.12);
+  --border-light: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.18);
 
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 2px 4px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 6px 12px -2px rgba(0, 0, 0, 0.4), 0 3px 7px -3px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 16px 24px -4px rgba(0, 0, 0, 0.5), 0 6px 10px -4px rgba(0, 0, 0, 0.4);
   
   /* Typography */
   --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -30,30 +31,31 @@
 }
 
 [data-theme="light"] {
-  /* Unique Light Theme - Mint Sand with Glassmorphism */
-  --bg-base: #f4f7f6;
-  --bg-surface: rgba(255, 255, 255, 0.6);
-  --bg-surface-hover: rgba(255, 255, 255, 0.9);
-  --bg-elevated: rgba(255, 255, 255, 1);
+  /* Ultra-Clean Modern Light Mode (Tailwind Slate & Emerald Tint) */
+  --bg-base: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #f1f5f9;
+  --bg-elevated: #ffffff;
 
   --text-primary: #0f172a;
   --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  --text-muted: #64748b;
 
   --accent-primary: #0d9488;
   --accent-hover: #0f766e;
-  --accent-transparent: rgba(13, 148, 136, 0.15);
-  
+  --accent-gradient: linear-gradient(135deg, #0d9488 0%, #0284c7 100%);
+  --accent-transparent: rgba(13, 148, 136, 0.1);
+
   --danger: #dc2626;
   --danger-hover: #b91c1c;
-  --danger-transparent: rgba(220, 38, 38, 0.1);
+  --danger-transparent: rgba(220, 38, 38, 0.08);
 
-  --border-light: rgba(0, 0, 0, 0.05);
-  --border-strong: rgba(0, 0, 0, 0.1);
+  --border-light: #e2e8f0;
+  --border-strong: #cbd5e1;
 
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
 }
 
 * {
@@ -62,13 +64,27 @@
   padding: 0;
 }
 
-body {
+html, body {
+  height: 100%;
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
   font-family: var(--font-sans);
   background-color: var(--bg-base);
   color: var(--text-primary);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  height: 100%;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -101,17 +117,106 @@ ul, ol {
 input, textarea, select {
   font-family: inherit;
   background: var(--bg-surface);
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--border-strong);
   color: var(--text-primary);
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 8px 12px;
   transition: all 0.2s ease;
 }
 
-input:focus, textarea:focus {
+input:focus, textarea:focus, select:focus {
   border-color: var(--accent-primary);
   outline: none;
-  box-shadow: 0 0 0 2px var(--accent-transparent);
+  box-shadow: 0 0 0 3px var(--accent-transparent);
+}
+
+/* Form controls styling */
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+.checkbox-input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--bg-elevated);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.checkbox-input:checked {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.checkbox-input:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 5px;
+  height: 9px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.time-range-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+  padding: 8px 12px;
+  background: var(--bg-surface-hover);
+  border-radius: 8px;
+  border: 1px solid var(--border-light);
+}
+
+.time-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.time-input {
+  padding: 4px 8px;
+  font-size: 0.8125rem;
+}
+
+.form-group-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.field-label {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.number-input {
+  width: 100%;
 }
 
 /* Base Buttons */
@@ -119,38 +224,46 @@ input:focus, textarea:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  background: var(--accent-primary);
+  gap: 8px;
+  background: var(--accent-gradient);
   color: white;
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-weight: 500;
-  transition: all 0.2s ease;
-  box-shadow: var(--shadow-sm);
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 10px rgba(13, 148, 136, 0.25);
 }
 
 .btn-primary:hover {
-  background: var(--accent-hover);
   transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(13, 148, 136, 0.4);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
 }
 
 .btn-secondary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   background: var(--bg-elevated);
   color: var(--text-primary);
-  padding: 8px 16px;
-  border-radius: 6px;
+  padding: 9px 18px;
+  border-radius: 8px;
   font-weight: 500;
+  font-size: 0.875rem;
   border: 1px solid var(--border-light);
+  backdrop-filter: blur(12px);
   transition: all 0.2s ease;
 }
 
 .btn-secondary:hover {
   background: var(--bg-surface-hover);
   border-color: var(--border-strong);
+  transform: translateY(-1px);
 }
 
 .btn-danger-text {
@@ -163,6 +276,7 @@ input:focus, textarea:focus {
   padding: 6px 12px;
   border-radius: 6px;
   font-weight: 500;
+  font-size: 0.8125rem;
   transition: all 0.2s ease;
 }
 
@@ -170,49 +284,29 @@ input:focus, textarea:focus {
   background: var(--danger-transparent);
 }
 
-#root {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-/* --- Responsive & Layout Additions --- */
-
-/* Touch Targets for Mobile & Tablet */
-@media (max-width: 1023px) {
-  button, .btn-primary, .btn-secondary, .btn-danger-text, input, select, .touch-target {
-    min-height: 44px;
-    /* Ensure minimum touch width but don't force width 44px if not needed */
-    padding-top: 10px;
-    padding-bottom: 10px;
-  }
-}
-
-/* Application Container Layout */
+/* --- Layout Grid --- */
+/* One track. From 768px up the settings sidebar is a fixed-position drawer (App.css), out of the
+   grid's flow — a 320px first column here would put the chat itself into that column and squeeze
+   the conversation pane to nothing. The drawer sets its own width; nothing here may override it. */
 .app-container {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  height: 100vh;
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
   height: 100dvh;
+  max-height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+
+.app-container > .app-sidebar {
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
-/* The grid track sets the width. App.css's fixed 320px would otherwise spill past the 280px track
-   and, being z-indexed, cover the left edge of the conversation list. */
-.app-container > .app-sidebar {
-  width: auto;
-  min-width: 0;
-}
-
-@media (max-width: 1023px) {
-  /* Tablet layout: collapsible or thinner sidebar */
-  .app-container {
-    grid-template-columns: 240px minmax(0, 1fr);
-  }
-}
-
 @media (max-width: 767px) {
-  /* Mobile layout: single column */
   .app-container {
     display: flex;
     flex-direction: column;
@@ -230,7 +324,6 @@ input:focus, textarea:focus {
     width: 100%;
   }
 
-  /* Mobile Navigation specific utility classes */
   .mobile-hidden {
     display: none !important;
   }

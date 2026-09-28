@@ -570,3 +570,35 @@ describe('connection', () => {
     expect(await screen.findByTestId('typing-indicator')).toHaveTextContent('Bình is typing…')
   })
 })
+
+describe('while history loads', () => {
+  it('shows the transcript skeleton until the first page arrives, then the messages', async () => {
+    let resolve: (page: { items: ReturnType<typeof aMessage>[]; nextCursor: null; hasMore: boolean }) => void = () => undefined
+    const getHistory = vi.fn(
+      () =>
+        new Promise<{ items: ReturnType<typeof aMessage>[]; nextCursor: null; hasMore: boolean }>((r) => {
+          resolve = r
+        }),
+    )
+
+    renderView({ client: fakeMessagingClient({ getHistory }) })
+
+    // Without this, a slow first page is an empty pane indistinguishable from an empty conversation.
+    expect(screen.getByText(/loading messages/i)).toBeInTheDocument()
+
+    resolve({ items: [aMessage({ id: 'm1', seq: 1, body: 'hello' })], nextCursor: null, hasMore: false })
+
+    expect(await screen.findByText('hello')).toBeInTheDocument()
+    expect(screen.queryByText(/loading messages/i)).not.toBeInTheDocument()
+  })
+
+  it('stops showing the skeleton when the first page fails', async () => {
+    renderView({
+      client: fakeMessagingClient({ getHistory: vi.fn(() => Promise.reject(new Error('offline'))) }),
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText(/loading messages/i)).not.toBeInTheDocument()
+    })
+  })
+})

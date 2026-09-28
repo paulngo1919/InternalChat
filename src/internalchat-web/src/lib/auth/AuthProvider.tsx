@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
+import { LoadingScreen } from '../../components/loading/LoadingScreen'
 import { AuthContext, useAuth, type AuthState } from './authContext'
 import {
   beginSignIn,
@@ -145,5 +146,5 @@ export function RequireAuth({ children, fallback }: RequireAuthProps) {
     )
   }
 
-  return <>{fallback ?? <p>Signing in…</p>}</>
+  return <>{fallback ?? <LoadingScreen message="Signing in…" />}</>
 }

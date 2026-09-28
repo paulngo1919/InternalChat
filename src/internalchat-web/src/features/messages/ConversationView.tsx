@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Bell, BellOff, Users } from 'lucide-react'
 
+import { MessageListSkeleton } from '../../components/loading/Skeletons'
 import type { MessagingClient, MessageResponse } from '../../lib/api/messages'
 import { OfflineQueue, type QueuedMessage, type SendOutcome } from '../../lib/messages/offlineQueue'
 import { GroupMembers } from '../conversations/GroupSettings'
@@ -20,7 +21,6 @@ import { membersQueryKey } from '../conversations/queryKeys'
 import { Composer } from './Composer'
 import { MessageList, type FailedMessage } from './MessageList'
 import { mergeMessages } from './messageStore'
-import { TypingIndicator } from './TypingIndicator'
 
 interface ConversationViewProps {
   readonly conversationId: string
@@ -64,6 +64,9 @@ export function ConversationView({
   const [pending, setPending] = useState<readonly QueuedMessage[]>([])
   const [failed, setFailed] = useState<readonly FailedMessage[]>([])
   const [hasOlder, setHasOlder] = useState(false)
+  // Which conversation's first history page has come back (or failed). Until it matches, the
+  // transcript shows a skeleton rather than an empty pane that reads as an empty conversation.
+  const [historyLoadedFor, setHistoryLoadedFor] = useState<string | null>(null)
   const [showMembers, setShowMembers] = useState(false)
 
   // Local and optimistic: muting is a personal notification preference, not something other
@@ -189,9 +192,16 @@ export function ConversationView({
     setMessages([])
 
     void (async () => {
-      const page = await client.getHistory(conversationId)
-      apply(page.items)
-      setHasOlder(page.hasMore)
+      try {
+        const page = await client.getHistory(conversationId)
+        apply(page.items)
+        setHasOlder(page.hasMore)
+      } catch {
+        // Nothing to show yet; live delivery and sends still fill the transcript. Leaving the
+        // skeleton up forever would be worse than an empty pane.
+      } finally {
+        setHistoryLoadedFor(conversationId)
+      }
     })()
   }, [apply, client, conversationId])
 
@@ -294,6 +304,9 @@ export function ConversationView({
       </div>
 
       <div className="chat-messages-area">
+        {historyLoadedFor !== conversationId && visible.length === 0 ? (
+          <MessageListSkeleton />
+        ) : (
         <MessageList
           messages={visible}
           pending={stillPending}
@@ -305,11 +318,13 @@ export function ConversationView({
           onLoadOlder={loadOlder}
           hasOlder={hasOlder}
           refreshAttachment={(attachmentId) => client.getAttachment(attachmentId)}
+          typing={typing}
+          names={names}
         />
+        )}
       </div>
 
       <div className="chat-composer-area">
-        <TypingIndicator typing={typing} names={names} />
         <Composer
           conversationId={conversationId}
           queue={queue}

@@ -8,6 +8,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 
+import { ConversationListSkeleton } from '../../components/loading/Skeletons'
 import type { MessagingClient } from '../../lib/api/messages'
 import { titleOf } from './conversationTitle'
 import { conversationsQueryKey } from './queryKeys'
@@ -31,7 +32,7 @@ export function ConversationList({ client, selectedId, onSelect }: ConversationL
   })
 
   if (isPending) {
-    return <p>Loading conversations…</p>
+    return <ConversationListSkeleton />
   }
 
   if (isError) {

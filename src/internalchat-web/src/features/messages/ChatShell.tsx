@@ -9,7 +9,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { ChevronLeft, Menu, Plus, Search } from 'lucide-react'
+import {
+  ChevronLeft,
+  Menu,
+  MessageSquare,
+  Plus,
+  Search,
+  Settings,
+  ShieldCheck,
+  Smartphone,
+  Zap,
+} from 'lucide-react'
 
 import {
   createMessagingClient,
@@ -39,6 +49,10 @@ interface ChatShellProps {
    * screen and owns the one way into the menu; wider layouts show the menu alongside and pass none.
    */
   readonly onOpenMenu?: (() => void) | undefined
+  /** Opens the settings and account drawer or screen. */
+  readonly onOpenSettings?: (() => void) | undefined
+  /** The current user profile information if available. */
+  readonly currentUser?: { displayName: string; email: string } | null
 }
 
 /** Shared so an untouched conversation does not hand ConversationView a new array every render. */
@@ -50,6 +64,8 @@ export function ChatShell({
   getAccessToken,
   currentEmployeeId,
   onOpenMenu,
+  onOpenSettings,
+  currentUser,
 }: ChatShellProps) {
   // 002 FR-011 — what delivery felt like here, reported in aggregate once a minute. The client is
   // wrapped so each fresh send also refines the clock-offset estimate the report depends on.
@@ -295,6 +311,35 @@ export function ChatShell({
               }}
             />
           )}
+
+          {currentUser && (
+            <div className="sidebar-user-footer">
+              <button
+                type="button"
+                className="user-profile-trigger"
+                onClick={onOpenSettings ?? onOpenMenu}
+                aria-label="User settings"
+                title="Account & Settings"
+              >
+                <div className="user-profile-avatar">
+                  {currentUser.displayName ? currentUser.displayName.charAt(0).toUpperCase() : 'U'}
+                  <span
+                    className={`status-indicator ${connected ? 'status-online' : 'status-offline'}`}
+                    aria-hidden="true"
+                  />
+                </div>
+                <div className="user-profile-details">
+                  <span className="user-profile-name">{currentUser.displayName}</span>
+                  <span className="user-profile-status">
+                    {connected ? 'Active' : 'Connecting…'}
+                  </span>
+                </div>
+                <div className="user-profile-gear">
+                  <Settings size={18} aria-hidden="true" />
+                </div>
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -318,8 +363,27 @@ export function ChatShell({
             </header>
           )}
           {selectedId === null || !selectedConversation.data ? (
-            <div className="empty-state">
-              <p>Choose a conversation.</p>
+            <div className="empty-state-hero">
+              <div className="empty-state-card">
+                <div className="empty-state-icon-wrapper">
+                  <MessageSquare size={36} className="empty-state-icon" />
+                </div>
+                <h2 className="empty-state-title">Welcome to InternalChat</h2>
+                <p className="empty-state-subtitle">
+                  Choose a conversation.
+                </p>
+                <div className="empty-state-badges">
+                  <span className="empty-badge">
+                    <ShieldCheck size={14} /> End-to-End Privacy
+                  </span>
+                  <span className="empty-badge">
+                    <Zap size={14} /> Realtime Sync
+                  </span>
+                  <span className="empty-badge">
+                    <Smartphone size={14} /> PWA Ready
+                  </span>
+                </div>
+              </div>
             </div>
           ) : (
             <ConversationView

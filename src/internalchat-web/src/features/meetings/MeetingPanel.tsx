@@ -16,6 +16,7 @@
 import { Suspense, useCallback, useState } from 'react'
 import { Video } from 'lucide-react'
 
+import { Spinner } from '../../components/loading/Skeletons'
 import type { MessagingClient, MeetingTokenResponse } from '../../lib/api/messages'
 import { MeetingRoom } from './index'
 import { JoinPrompt, type Meeting } from './JoinPrompt'
@@ -108,7 +109,7 @@ export function MeetingPanel({ conversationId, client, currentEmployeeId }: Meet
           The fallback is what someone sees for the second or so the chunk takes to arrive after
           they click join. Saying what is happening beats an empty panel that looks like a failure.
         */}
-        <Suspense fallback={<p role="status">Connecting to the meeting…</p>}>
+        <Suspense fallback={<Spinner label="Connecting to the meeting…" />}>
           <MeetingRoom
             token={credential.token}
             serverUrl={credential.mediaServerUrl}

@@ -147,6 +147,7 @@ services:
       # import is unambiguous: a stray .json left in ./keycloak/import would otherwise
       # be imported too, and Keycloak reports that as success.
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      - ./keycloak/themes:/opt/keycloak/themes:ro
     ports:
       - '127.0.0.1:${KEYCLOAK_PORT}:8080'
     # The management port (9000) serves /health/ready. The image is distroless,
@@ -262,7 +263,7 @@ services:
     command:
       - --connection
       - >-
-        Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_APP_USER};Password=${POSTGRES_APP_PASSWORD};Timeout=30
+        Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Timeout=30
     restart: 'no'
     depends_on:
       postgres:

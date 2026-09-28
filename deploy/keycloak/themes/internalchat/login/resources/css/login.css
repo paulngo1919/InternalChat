@@ -1,0 +1,177 @@
+/* Custom Glassmorphism Theme for Keycloak */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
+
+body {
+  background-color: #0f172a !important;
+  background-image: none !important;
+  color: white !important;
+  font-family: 'Inter', system-ui, sans-serif !important;
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Background floating shapes */
+body::before, body::after, .login-pf-page::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.4;
+  animation: float 20s infinite alternate ease-in-out;
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::before {
+  top: -10%;
+  left: -10%;
+  width: 50vw;
+  height: 50vw;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, transparent 70%);
+}
+
+body::after {
+  bottom: -20%;
+  right: -10%;
+  width: 60vw;
+  height: 60vw;
+  background: radial-gradient(circle, rgba(20, 184, 166, 0.3) 0%, transparent 70%);
+  animation-delay: -5s;
+}
+
+.login-pf-page::after {
+  top: 40%;
+  left: 60%;
+  width: 40vw;
+  height: 40vw;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.3) 0%, transparent 70%);
+  animation-delay: -10s;
+}
+
+@keyframes float {
+  0% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(5%, 10%) scale(1.05); }
+  66% { transform: translate(-5%, 5%) scale(0.95); }
+  100% { transform: translate(0, -10%) scale(1.1); }
+}
+
+/* Container & Card */
+.login-pf-page {
+    z-index: 1;
+    position: relative;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0 !important;
+}
+
+#kc-header {
+    margin-bottom: 20px !important;
+}
+
+#kc-header-wrapper {
+    color: white !important;
+    font-weight: 800 !important;
+    font-size: 28px !important;
+    letter-spacing: -0.02em !important;
+    text-transform: none !important;
+}
+
+.card-pf {
+  background: rgba(30, 41, 59, 0.7) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 28px !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+  padding: 48px 40px !important;
+  color: white !important;
+  max-width: 440px !important;
+  margin: 0 auto !important;
+}
+
+/* Titles and text */
+#kc-page-title, .pf-v5-c-title {
+    color: white !important;
+    font-weight: 600 !important;
+    text-align: center !important;
+    margin-bottom: 24px !important;
+}
+
+.pf-c-form__label-text, .pf-v5-c-form__label-text {
+    color: rgba(255, 255, 255, 0.8) !important;
+    font-weight: 500 !important;
+}
+
+/* Inputs */
+.pf-c-form-control, .pf-v5-c-form-control {
+    background: rgba(15, 23, 42, 0.5) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    color: white !important;
+    border-radius: 12px !important;
+    padding: 12px 16px !important;
+    height: auto !important;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.1) !important;
+}
+
+.pf-c-form-control:focus, .pf-v5-c-form-control:focus {
+    border-color: rgba(139, 92, 246, 0.8) !important;
+    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.3) !important;
+}
+
+/* Input group buttons (password visibility toggle) */
+.pf-v5-c-button.pf-m-control {
+    background: rgba(15, 23, 42, 0.5) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border-left: none !important;
+    color: white !important;
+    border-radius: 0 12px 12px 0 !important;
+}
+
+/* Buttons */
+.pf-c-button.pf-m-primary, .pf-v5-c-button.pf-m-primary {
+    background: white !important;
+    color: #0f172a !important;
+    border-radius: 16px !important;
+    font-weight: 600 !important;
+    padding: 16px 24px !important;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    border: none !important;
+    width: 100% !important;
+    font-size: 16px !important;
+    margin-top: 16px !important;
+}
+
+.pf-c-button.pf-m-primary:hover, .pf-v5-c-button.pf-m-primary:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2) !important;
+}
+
+.pf-c-button.pf-m-primary:active, .pf-v5-c-button.pf-m-primary:active {
+    transform: translateY(0) !important;
+}
+
+/* Links */
+a {
+    color: #8b5cf6 !important;
+    text-decoration: none !important;
+    font-weight: 500 !important;
+}
+
+a:hover {
+    color: #a78bfa !important;
+    text-decoration: underline !important;
+}
+
+.pf-v5-c-login__main-footer-links {
+    display: none !important;
+}
+
+.pf-c-check__label {
+    color: rgba(255, 255, 255, 0.8) !important;
+}

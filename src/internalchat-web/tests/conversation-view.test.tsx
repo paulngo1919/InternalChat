@@ -23,6 +23,9 @@ vi.mock('react-virtuoso', () => ({
     data: { key: string }[]
     itemContent: (index: number, row: unknown) => React.ReactNode
     computeItemKey: (index: number, row: unknown) => string
+    context?: unknown
+    // Rendered like the real list does, since the typing line lives in the footer.
+    components?: { Footer?: React.ComponentType<{ context?: unknown }> }
     startReached: () => void
   }) => (
     <div data-testid="virtuoso">
@@ -36,6 +39,7 @@ vi.mock('react-virtuoso', () => ({
       {props.data.map((row, index) => (
         <div key={props.computeItemKey(index, row)}>{props.itemContent(index, row)}</div>
       ))}
+      {props.components?.Footer && <props.components.Footer context={props.context} />}
     </div>
   ),
 }))

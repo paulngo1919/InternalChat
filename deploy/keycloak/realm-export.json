@@ -1,6 +1,7 @@
 {
   "realm": "internalchat",
   "displayName": "InternalChat",
+  "loginTheme": "internalchat",
   "enabled": true,
   "sslRequired": "none",
   "registrationAllowed": false,

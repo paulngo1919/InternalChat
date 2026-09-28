@@ -661,11 +661,13 @@
 }
 
 /* Chat Bubbles */
+/* Spacing is padding, never margin: the virtualized list measures each row by its box, and a margin
+   sits outside it. 12px uncounted per row added up to the newest message landing ~100px below the
+   fold on open. Keep margins off .message-row and its wrapper. */
 .message-row {
   display: flex;
   width: 100%;
-  margin-bottom: 12px;
-  padding: 0 24px;
+  padding: 0 24px 12px;
 }
 
 .message-mine {

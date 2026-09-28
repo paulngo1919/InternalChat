@@ -7,8 +7,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-
 import { LoadingScreen } from '../../components/loading/LoadingScreen'
+import { LoginScreen } from '../../features/auth/LoginScreen'
 import { AuthContext, useAuth, type AuthState } from './authContext'
 import {
   beginSignIn,
@@ -114,8 +114,7 @@ interface RequireAuthProps {
 /**
  * Renders its children only for a signed-in employee.
  *
- * The redirect happens in an effect rather than during render, because navigating away mid-render
- * is a side effect in a place React is entitled to run twice.
+ * If signed out, it renders the LoginScreen where the user can manually click Sign In.
  */
 export function RequireAuth({ children, fallback }: RequireAuthProps) {
   const { status, signIn, error } = useAuth()
@@ -124,11 +123,9 @@ export function RequireAuth({ children, fallback }: RequireAuthProps) {
     signIn()
   }, [signIn])
 
-  useEffect(() => {
-    if (status === 'signed-out') {
-      start()
-    }
-  }, [status, start])
+  if (status === 'signed-out') {
+    return <LoginScreen onSignIn={start} />
+  }
 
   if (status === 'signed-in') {
     return <>{children}</>

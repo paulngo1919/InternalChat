@@ -8,3 +8,6 @@ CREATE EXTENSION IF NOT EXISTS unaccent;
 -- pg_stat_statements is preloaded via shared_preload_libraries; create the
 -- extension so the views are available for performance investigation.
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+-- Create the app user for development
+CREATE ROLE internalchat_app WITH LOGIN PASSWORD 'change-me-postgres-app';

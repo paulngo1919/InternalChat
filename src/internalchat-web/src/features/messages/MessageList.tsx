@@ -11,7 +11,7 @@
  * behaviour that people notice immediately when it is wrong.
  */
 
-import { useRef, useState, forwardRef } from 'react'
+import { forwardRef, useRef } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 
 import { ImagePreview } from '../attachments/ImagePreview'
@@ -150,7 +150,8 @@ export function MessageList({
   ]
 
   const virtuosoRef = useRef<VirtuosoHandle>(null)
-  const [, setIsAtBottom] = useState(true)
+  // A ref, not state: it is read inside a scroll callback and changing it must not re-render.
+  const atBottom = useRef(true)
 
   return (
     <Virtuoso
@@ -166,8 +167,18 @@ export function MessageList({
       // Anchors the view to the newest message and keeps it there as messages arrive — unless the
       // reader has scrolled up, in which case it leaves them where they are. Yanking somebody back
       // to the bottom mid-read is the single most irritating thing a chat list can do.
-      atBottomStateChange={setIsAtBottom}
+      atBottomStateChange={(value) => {
+        atBottom.current = value
+      }}
       followOutput="auto"
+      // followOutput reacts to added rows only. A picture finishing loading or the typing line
+      // appearing makes the list taller without adding one, and would leave the newest message
+      // half below the fold — so re-pin on growth, for a reader who was at the bottom.
+      totalListHeightChanged={() => {
+        if (atBottom.current) {
+          virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end' })
+        }
+      }}
       alignToBottom={true}
       initialTopMostItemIndex={{ index: 'LAST', align: 'end' }}
       startReached={() => {

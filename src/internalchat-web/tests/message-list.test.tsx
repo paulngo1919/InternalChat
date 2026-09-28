@@ -27,13 +27,26 @@ interface StubProps {
   initialTopMostItemIndex: number | { index: number | 'LAST'; align?: string }
   alignToBottom?: boolean
   followOutput: string
+  atBottomStateChange?: (atBottom: boolean) => void
+  totalListHeightChanged?: (height: number) => void
 }
 
 const captured: { props: StubProps | null } = { props: null }
 
-vi.mock('react-virtuoso', () => ({
-  Virtuoso: (props: StubProps) => {
+/** Every scrollToIndex the component asked the list for, through its ref. */
+const scrolls: unknown[] = []
+
+vi.mock('react-virtuoso', async () => {
+  const { forwardRef, useImperativeHandle } = await import('react')
+
+  return {
+  Virtuoso: forwardRef((props: StubProps, ref) => {
     captured.props = props
+    useImperativeHandle(ref, () => ({
+      scrollToIndex: (location: unknown) => {
+        scrolls.push(location)
+      },
+    }))
 
     return (
       <div data-testid="virtuoso">
@@ -51,11 +64,13 @@ vi.mock('react-virtuoso', () => ({
         ))}
       </div>
     )
-  },
-}))
+  }),
+  }
+})
 
 afterEach(() => {
   captured.props = null
+  scrolls.length = 0
   cleanup()
 })
 
@@ -245,6 +260,27 @@ describe('paging', () => {
     // Follows the bottom, but only while the reader is already there — yanking somebody back
     // mid-read is the single most irritating thing a chat list can do.
     expect(captured.props?.followOutput).toBe('auto')
+  })
+
+  // Opening at 'LAST' is an estimate: rows are measured as they render, and a picture or a typing
+  // line that arrives afterwards makes the list taller without adding a row, which followOutput does
+  // not react to. So the list is re-pinned whenever it grows — but only for a reader at the bottom.
+  it('stays pinned to the newest message when the list grows while the reader is at the bottom', () => {
+    renderList({ messages: [aMessage({ id: 'm1', seq: 1 })] })
+
+    captured.props?.atBottomStateChange?.(true)
+    captured.props?.totalListHeightChanged?.(1200)
+
+    expect(scrolls).toEqual([{ index: 'LAST', align: 'end' }])
+  })
+
+  it('leaves a reader who scrolled up where they are when the list grows', () => {
+    renderList({ messages: [aMessage({ id: 'm1', seq: 1 })] })
+
+    captured.props?.atBottomStateChange?.(false)
+    captured.props?.totalListHeightChanged?.(1200)
+
+    expect(scrolls).toEqual([])
   })
 
   it('never computes a negative initial index for an empty conversation', () => {
